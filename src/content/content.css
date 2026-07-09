@@ -101,6 +101,52 @@
   font-family: ui-monospace, monospace;
   font-size: 13px;
 }
+/* Follow-up Q&A */
+.yapsum-ask {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid rgba(128, 128, 128, 0.2);
+}
+.yapsum-ask input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid rgba(128, 128, 128, 0.35);
+  border-radius: 18px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 13px;
+}
+.yapsum-ask input:focus { outline: 2px solid #0b57d0; outline-offset: -1px; }
+.yapsum-ask button {
+  border: none;
+  border-radius: 18px;
+  padding: 0 16px;
+  background: #0b57d0;
+  color: #fff;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.yapsum-ask button:hover { background: #0842a0; }
+.yapsum-ask button:disabled,
+.yapsum-ask input:disabled { opacity: 0.55; cursor: default; }
+.yapsum-qa-q {
+  margin: 14px 0 6px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(128, 128, 128, 0.35);
+  font-weight: 600;
+}
+.yapsum-qa-q::before { content: "Q: "; opacity: 0.6; }
+.yapsum-qa-a.yapsum-error {
+  color: #d33;
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+}
+
 .yapsum-debug-btn {
   display: inline-block;
   margin-top: 4px;

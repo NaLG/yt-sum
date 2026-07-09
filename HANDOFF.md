@@ -6,21 +6,29 @@ videos** using the user's **own LLM API key**. Repo: `/Users/clawd/repos/yap-sum
 **Auth: BYO API key only, no OAuth.** Anthropic (and OpenAI) block third-party
 apps from using subscription login for inference — settled, don't revisit.
 
-## Current state (v0.2.0, 2026-07-10)
+## Current state (v0.3.0, 2026-07-10)
 
+- **CONFIRMED WORKING by the user on desktop with a real key (Gemini).**
 - **Works & tested end-to-end (mock LLM):** button injection; transcript via
-  network intercept — now BOTH `get_transcript` (classic panel) AND
+  network intercept — BOTH `get_transcript` (classic panel) AND
   **`/api/timedtext` (caption-track) capture**; OpenAI-compatible + Anthropic
-  SSE streaming; markdown→rich-text panel (injection-safe); options page.
-- **The user's failing videos (`31MvP7yHzxM`, `tVnOfWW89pA`) now PASS**
+  SSE streaming; markdown→rich-text panel (injection-safe); options page;
+  **long-transcript chunking** (map-reduce: per-part notes → synthesis, with
+  "part i/N" progress in the panel; `chunkChars` default 100k, `maxChunks` 10,
+  0 disables); **follow-up Q&A field** under the summary (sends transcript +
+  summary + prior turns; streamed markdown answers; YouTube hotkeys shielded).
+- The formerly failing videos (`31MvP7yHzxM`, `tVnOfWW89pA`) pass
   `test/smoke-full.mjs` — root cause was the "PAmodern" panel variant (below).
 - **Android:** device-free emulator loop DONE (`npm run emulator` →
   `npm run test:android`). Extraction verified in Fenix 152 on the emulator
   (desktop-site UA). m.youtube.com itself has NO transcript surface — mobile
   users need "Request desktop site" (content.js shows that hint on failure).
-- **Unverified:** real remote-LLM output (tests use a mock; needs a BYO key).
-- **Pending:** long-transcript chunking (bg trims at 320k chars); follow-up
-  questions feature; AMO signing (needed for REAL Android installs — see below).
+- **Pending:** AMO unlisted signing (the path to REAL Android installs — Fenix
+  has no about:debugging and strips webRequest from temp add-ons). After that:
+  hidden desktop-iframe extraction on m.youtube.com (user-approved backlog
+  idea: iframe the desktop watch page invisibly, strip X-Frame-Options +
+  frame-scoped desktop UA via webRequest, existing intercept captures the
+  transcript, summary renders in our own mobile panel — no overlay needed).
 
 ## Transcript extraction (the expensive lessons — keep ALL of this)
 
@@ -87,15 +95,17 @@ player can mint. Established empirically (mid-2026):
   Button injection, `renderMarkdown` (injection-safe), error panel + Copy debug
   info (+ "Request desktop site" hint on m.youtube.com).
 - `src/background/background.js` — get_transcript + timedtext intercepts
-  (`collectBody`), LLM call (SSE over runtime port), `getDebug` ring buffer.
+  (`collectBody`), `callLLM` (SSE over runtime port), chunked `streamSummary`
+  (map-reduce) + `streamFollowup`, `getDebug` ring buffer.
 - `scripts/android-env.sh`, `scripts/android-emulator.sh` — the Android loop.
 - `src/options/` — settings page + toolbar popup.
 
 ## Build / test / ship
 
 ```
-npm run build                      # -> dist/yap-sum-0.2.0.zip
-node test/smoke-full.mjs [VIDEO]   # AUTHORITATIVE full path (desktop)
+npm run build                      # -> dist/yap-sum-0.3.0.zip
+node test/smoke-full.mjs [VIDEO]   # AUTHORITATIVE full path incl. follow-up Q&A
+YAPSUM_CHUNK=1 node test/smoke-full.mjs   # chunked map-reduce mode (tiny chunks)
 node test/smoke-full.mjs 31MvP7yHzxM   # the PAmodern regression
 node test/webext-validate.mjs      # extractor-only (desktop); PAmodern videos
                                    #   FAIL here by design (need bg intercept)
@@ -109,10 +119,10 @@ web-ext lint --source-dir src      # 0 errors (4 min-version warnings, benign)
 
 ## Next
 
-1. Hand v0.2.0 to the user — their failing videos should now work; if not, the
-   Copy debug info bundle now logs timedtext captures too.
-2. Long-transcript chunking (2h+ ≈ >320k chars). 3. Real-key content check.
-4. Follow-up questions. 5. AMO unlisted signing for real Android installs.
+1. Hand v0.3.0 to the user (chunking + follow-up Q&A are new since their
+   confirmed-working v0.2.0).
+2. AMO unlisted signing (free account + API keys; `web-ext sign`) → real
+   Android installs. 3. Then the hidden desktop-iframe mobile idea (task #6).
 
 ## Working rule
 

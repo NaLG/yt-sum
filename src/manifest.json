@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "yap-sum",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "One-click AI summaries of YouTube videos through your own LLM API key. No backend, no tracking.",
   "browser_specific_settings": {
     "gecko": {

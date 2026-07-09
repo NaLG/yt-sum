@@ -24,8 +24,10 @@ const DEBUG = process.env.YAPSUM_DEBUG === "1";
 
 // ---- mock OpenAI-compatible server + report relay (one server) -------------
 
+const CHUNK = process.env.YAPSUM_CHUNK === "1"; // force map-reduce with tiny chunks
+
 let resolveReport = null;
-let sawLLMRequest = null;
+const llm = { parts: [], summary: null, followup: null }; // everything the mock saw
 
 const server = createServer((req, res) => {
   const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "content-type, authorization" };
@@ -35,30 +37,44 @@ const server = createServer((req, res) => {
     let body = "";
     req.on("data", (c) => (body += c));
     req.on("end", () => {
-      let parsed = null, valid = false, transcriptChars = 0, firstLine = "", title = "";
+      // Route by request shape: part-notes, follow-up, or summary/synthesis.
+      // Reply proves what the background actually sent.
+      let reply = "MOCK_CONFUSED";
       try {
-        parsed = JSON.parse(body);
+        const parsed = JSON.parse(body);
         const sys = parsed.messages?.find((m) => m.role === "system");
-        const user = parsed.messages?.find((m) => m.role === "user");
-        valid = !!(parsed.model && parsed.stream === true && sys && user);
-        const m = (user?.content || "").match(/Video title: (.*)\n/);
-        title = m ? m[1] : "";
-        // The user prompt embeds the transcript after "Transcript ...:\n\n".
-        const t = (user?.content || "").split(/Transcript[^\n]*:\n\n/)[1] || "";
-        transcriptChars = t.length;
-        firstLine = (t.split("\n")[0] || "").slice(0, 40);
-      } catch {}
-      sawLLMRequest = { valid, hasAuth: !!req.headers.authorization, transcriptChars, title };
+        const users = parsed.messages?.filter((m) => m.role === "user") || [];
+        const lastUser = users[users.length - 1]?.content || "";
+        const valid = !!(parsed.model && parsed.stream === true && sys && users.length);
 
-      // Stream a summary in OpenAI SSE format, proving what we received.
-      // Rich markdown so we can verify the panel renders formatted DOM.
+        if ((sys?.content || "").startsWith("You take dense notes")) {
+          const pm = lastUser.match(/Transcript PART (\d+) of (\d+)/);
+          const t = lastUser.split(/:\n\n/)[1] || "";
+          llm.parts.push({ valid, part: pm ? +pm[1] : 0, of: pm ? +pm[2] : 0, chars: t.length });
+          reply = `- NOTES_PART_${pm ? pm[1] : "?"} chars=${t.length}`;
+        } else if ((sys?.content || "").startsWith("You answer follow-up")) {
+          llm.followup = { valid, question: lastUser, messages: parsed.messages.length };
+          reply = `**ANSWER_OK** to: ${lastUser}`;
+        } else {
+          const user = users[0]?.content || "";
+          const title = (user.match(/Video title: (.*)\n/) || [])[1] || "";
+          const synthesis = /sequential parts/.test(user);
+          const t = user.split(/Transcript[^\n]*:\n\n/)[1] || "";
+          llm.summary = {
+            valid, hasAuth: !!req.headers.authorization, title, synthesis,
+            transcriptChars: t.length,
+            notesSeen: (user.match(/NOTES_PART_\d+/g) || []).length,
+          };
+          reply =
+            `SUMMARY_OK title="${title}" transcript_chars=${t.length} first="${(t.split("\n")[0] || "").slice(0, 40)}"\n\n` +
+            `### Key Takeaways\n\n` +
+            `- **First** point about the video\n` +
+            `- Second point two\n`;
+        }
+      } catch {}
+
       res.writeHead(200, { "content-type": "text/event-stream", ...cors });
-      const summary =
-        `SUMMARY_OK title="${title}" transcript_chars=${transcriptChars} first="${firstLine}"\n\n` +
-        `### Key Takeaways\n\n` +
-        `- **First** point about the video\n` +
-        `- Second point two\n`;
-      const words = summary.match(/\S+\s*/g) || [summary];
+      const words = reply.match(/\S+\s*/g) || [reply];
       let i = 0;
       const tick = setInterval(() => {
         if (i < words.length) {
@@ -103,6 +119,7 @@ writeFileSync(
      model: "mock-model",
      apiKey: "test-key",
      maxTokens: 256,
+     ${CHUNK ? "chunkChars: 3000, maxChunks: 10," : ""}
    });
    browser.runtime.onMessage.addListener((m) => {
      if (m && m.__smoke) fetch("http://127.0.0.1:${PORT}/report", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(m) }).catch(() => {});
@@ -144,6 +161,30 @@ writeFileSync(
        }
        await sleep(400); // let the final markdown render settle
        const body = document.querySelector("#yapsum-panel .yapsum-panel-body");
+
+       // Follow-up flow: type a question, click Ask, expect the streamed answer.
+       let followupOk = false, followupRendered = false, followupErr = null;
+       try {
+         let inp = null, askBtn = null;
+         for (let i = 0; i < 12 && !inp; i++) {
+           await sleep(300);
+           inp = document.querySelector("#yapsum-panel .yapsum-ask input");
+           askBtn = document.querySelector("#yapsum-panel .yapsum-ask button");
+         }
+         if (!inp || !askBtn) throw new Error("follow-up UI not mounted");
+         inp.value = "What is the second point?";
+         askBtn.click();
+         for (let i = 0; i < 40; i++) {
+           await sleep(500);
+           const a = document.querySelector("#yapsum-panel .yapsum-qa-a");
+           if (a && a.textContent.includes("ANSWER_OK to: What is the second point?")) {
+             followupOk = true;
+             followupRendered = !!a.querySelector("strong"); // **ANSWER_OK** → <strong>
+             break;
+           }
+         }
+       } catch (e) { followupErr = String(e); }
+
        let bgLog = null;
        try {
          const dbg = await browser.runtime.sendMessage({ type: "getDebug" });
@@ -152,6 +193,7 @@ writeFileSync(
        browser.runtime.sendMessage({
          __smoke: true,
          bgLog,
+         followupOk, followupRendered, followupErr,
          ok: text.includes("SUMMARY_OK"),
          method: document.documentElement.dataset.yapsumMethod || "(unknown)",
          scrapeRows,
@@ -182,13 +224,17 @@ const report = await new Promise((resolve) => {
 try { child.kill("SIGTERM"); } catch {}
 server.close();
 
-console.log("\n--- full-path verification (transcript open, as a real user) ---");
+console.log(`\n--- full-path verification (transcript open, as a real user${CHUNK ? "; CHUNKED mode" : ""}) ---`);
 console.log("generic scraper read rows:", report.scrapeRows);
 console.log("extraction method used:", report.method);
 console.log("rich text rendered (heading/list/strong):", report.renderedHeading, "/", report.renderedList, "/", report.renderedStrong);
-console.log("LLM endpoint received request:", JSON.stringify(sawLLMRequest));
+console.log("LLM summary request:", JSON.stringify(llm.summary));
+if (CHUNK) console.log("LLM part requests:", JSON.stringify(llm.parts));
+console.log("LLM follow-up request:", JSON.stringify(llm.followup));
+console.log("follow-up:", report.followupOk, "rendered:", report.followupRendered, report.followupErr || "");
 console.log("panel showed:", JSON.stringify(report.panelText || report.error));
-if (report.bgLog) console.log("bg capture log:", JSON.stringify(report.bgLog, null, 1));
+if (!report.ok && report.bgLog) console.log("bg capture log:", JSON.stringify(report.bgLog, null, 1));
+const partChars = llm.parts.reduce((a, p) => a + p.chars, 0);
 const pass =
   report.ok &&
   (report.method === "intercept" || report.method === "captions-intercept" || report.method === "scrape") &&
@@ -196,11 +242,19 @@ const pass =
   report.renderedList === true &&
   report.renderedStrong === true &&
   report.literalMarkdown === false &&
-  sawLLMRequest?.valid &&
-  sawLLMRequest?.transcriptChars > 5000;                      // the FULL transcript reached the LLM
+  llm.summary?.valid &&
+  llm.summary?.hasAuth &&
+  // The FULL transcript reached the LLM: directly, or covered by part notes.
+  (CHUNK
+    ? llm.parts.length >= 2 && llm.parts.every((p) => p.valid) && llm.summary.synthesis && llm.summary.notesSeen === llm.parts.length && partChars > 5000
+    : llm.summary.transcriptChars > 5000) &&
+  report.followupOk === true &&
+  report.followupRendered === true &&
+  llm.followup?.valid &&
+  llm.followup?.messages >= 4; // system+transcript+assistant-summary+question
 console.log(
   pass
-    ? `\n✅ PASS — transcript read (${report.method}), scraper got ${report.scrapeRows} rows, summarized as rich text`
+    ? `\n✅ PASS — transcript read (${report.method}), ${CHUNK ? `${llm.parts.length} chunks, ` : ""}summarized as rich text, follow-up answered`
     : "\n❌ FAIL"
 );
 process.exit(pass ? 0 : 1);

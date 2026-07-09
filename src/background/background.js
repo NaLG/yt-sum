@@ -189,6 +189,11 @@ const DEFAULTS = {
   // Guard against pathological transcripts blowing past context windows / cost.
   // ~4 chars/token, so 320k chars ~= 80k tokens. Trim from the middle if longer.
   maxTranscriptChars: 320000,
+  // Transcripts longer than chunkChars are summarized map-reduce style:
+  // per-part notes, then one synthesis call. ~100k chars ≈ 25k tokens/call,
+  // safe for small-context models. 0 disables chunking (trim-only behavior).
+  chunkChars: 100000,
+  maxChunks: 10,
 };
 
 async function getConfig() {
@@ -213,8 +218,7 @@ function buildUserPrompt(title, transcript) {
 
 // ---- provider request builders ----
 
-function buildRequest(cfg, title, transcript) {
-  const userPrompt = buildUserPrompt(title, transcript);
+function buildRequest(cfg, system, messages) {
   if (cfg.provider === "anthropic") {
     return {
       url: `${cfg.baseUrl.replace(/\/$/, "")}/messages`,
@@ -229,9 +233,9 @@ function buildRequest(cfg, title, transcript) {
       body: {
         model: cfg.model,
         max_tokens: cfg.maxTokens,
-        system: cfg.systemPrompt,
+        system,
         stream: true,
-        messages: [{ role: "user", content: userPrompt }],
+        messages,
       },
       parse: parseAnthropicSSE,
     };
@@ -247,10 +251,7 @@ function buildRequest(cfg, title, transcript) {
       model: cfg.model,
       max_tokens: cfg.maxTokens,
       stream: true,
-      messages: [
-        { role: "system", content: cfg.systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
+      messages: [{ role: "system", content: system }, ...messages],
     },
     parse: parseOpenAISSE,
   };
@@ -268,22 +269,19 @@ function parseAnthropicSSE(json) {
 
 // ---- streaming driver ----
 
-async function streamSummary(port, cfg, title, transcript) {
-  const req = buildRequest(cfg, title, transcript);
+// One streaming LLM call. Returns the full text; onDelta fires per chunk.
+// Throws with a user-presentable message on any failure.
+async function callLLM(cfg, system, messages, onDelta) {
+  const req = buildRequest(cfg, system, messages);
   let res;
   try {
     res = await fetch(req.url, { method: "POST", headers: req.headers, body: JSON.stringify(req.body) });
   } catch (e) {
-    port.postMessage({ type: "error", error: `Network error reaching the LLM endpoint: ${e.message}` });
-    return;
+    throw new Error(`Network error reaching the LLM endpoint: ${e.message}`);
   }
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    port.postMessage({
-      type: "error",
-      error: `LLM endpoint returned ${res.status}. ${body.slice(0, 300)}`,
-    });
-    return;
+    throw new Error(`LLM endpoint returned ${res.status}. ${body.slice(0, 300)}`);
   }
 
   const reader = res.body.getReader();
@@ -308,14 +306,90 @@ async function streamSummary(port, cfg, title, transcript) {
         const delta = req.parse(json);
         if (delta) {
           full += delta;
-          port.postMessage({ type: "chunk", text: delta });
+          onDelta?.(delta);
         }
       }
     }
-    port.postMessage({ type: "done", text: full });
   } catch (e) {
-    port.postMessage({ type: "error", error: `Stream interrupted: ${e.message}` });
+    throw new Error(`Stream interrupted: ${e.message}`);
   }
+  return full;
+}
+
+// Split at line boundaries into <= maxChunks roughly equal parts.
+function splitTranscript(text, targetChars, maxChunks) {
+  const nChunks = Math.min(maxChunks, Math.max(2, Math.ceil(text.length / targetChars)));
+  const per = Math.ceil(text.length / nChunks);
+  const parts = [];
+  let cur = [], curLen = 0;
+  for (const line of text.split("\n")) {
+    cur.push(line);
+    curLen += line.length + 1;
+    if (curLen >= per && parts.length < nChunks - 1) {
+      parts.push(cur.join("\n"));
+      cur = []; curLen = 0;
+    }
+  }
+  if (cur.length) parts.push(cur.join("\n"));
+  return parts;
+}
+
+const PART_SYSTEM =
+  "You take dense notes on one PART of a longer video transcript. Capture the topics, claims, " +
+  "facts, figures, names, and steps in order, tersely, as bullet points. Omit sponsor reads and " +
+  "filler. No commentary about the notes themselves.";
+
+async function streamSummary(port, cfg, title, transcript) {
+  // Long transcript → map-reduce: per-part notes, then one synthesis call that
+  // streams to the panel. Keeps every call within small-model context windows.
+  if (cfg.chunkChars > 0 && transcript.length > cfg.chunkChars * 1.2) {
+    const capped = trimTranscript(transcript, cfg.chunkChars * cfg.maxChunks);
+    const parts = splitTranscript(capped, cfg.chunkChars, cfg.maxChunks);
+    const notes = [];
+    for (let i = 0; i < parts.length; i++) {
+      port.postMessage({ type: "stage", text: `Long transcript — summarizing part ${i + 1}/${parts.length}…` });
+      notes.push(
+        await callLLM(cfg, PART_SYSTEM, [
+          { role: "user", content: `Video title: ${title}\n\nTranscript PART ${i + 1} of ${parts.length} (timestamps in brackets):\n\n${parts[i]}` },
+        ])
+      );
+    }
+    port.postMessage({ type: "stage", text: `Synthesizing summary from ${parts.length} parts…` });
+    const synthesis =
+      `Video title: ${title}\n\nThe video's transcript was processed in ${parts.length} sequential parts. ` +
+      `Notes for each part, in order:\n\n` +
+      notes.map((n, i) => `--- Part ${i + 1} notes ---\n${n}`).join("\n\n") +
+      `\n\nWrite the final summary of the WHOLE video from these notes.`;
+    const full = await callLLM(cfg, cfg.systemPrompt, [{ role: "user", content: synthesis }], (d) =>
+      port.postMessage({ type: "chunk", text: d })
+    );
+    port.postMessage({ type: "done", text: full });
+    return;
+  }
+
+  const userPrompt = buildUserPrompt(title, trimTranscript(transcript, cfg.maxTranscriptChars));
+  const full = await callLLM(cfg, cfg.systemPrompt, [{ role: "user", content: userPrompt }], (d) =>
+    port.postMessage({ type: "chunk", text: d })
+  );
+  port.postMessage({ type: "done", text: full });
+}
+
+const FOLLOWUP_SYSTEM =
+  "You answer follow-up questions about a YouTube video, grounded in its transcript (provided in the " +
+  "first message). If the transcript doesn't cover the question, say so briefly. Answer in tight markdown.";
+
+async function streamFollowup(port, cfg, msg) {
+  const messages = [
+    { role: "user", content: buildUserPrompt(msg.title || "Untitled", trimTranscript(msg.transcript || "", cfg.maxTranscriptChars)) },
+    { role: "assistant", content: msg.summary || "(no summary)" },
+  ];
+  for (const turn of msg.qa || []) {
+    messages.push({ role: "user", content: turn.q });
+    messages.push({ role: "assistant", content: turn.a });
+  }
+  messages.push({ role: "user", content: msg.question });
+  const full = await callLLM(cfg, FOLLOWUP_SYSTEM, messages, (d) => port.postMessage({ type: "chunk", text: d }));
+  port.postMessage({ type: "done", text: full });
 }
 
 // ---- port wiring ----
@@ -323,7 +397,7 @@ async function streamSummary(port, cfg, title, transcript) {
 browser.runtime.onConnect.addListener((port) => {
   if (port.name !== "summarize") return;
   port.onMessage.addListener(async (msg) => {
-    if (msg.type !== "summarize") return;
+    if (msg.type !== "summarize" && msg.type !== "followup") return;
     const cfg = await getConfig();
     if (!cfg.apiKey) {
       port.postMessage({
@@ -332,8 +406,12 @@ browser.runtime.onConnect.addListener((port) => {
       });
       return;
     }
-    const transcript = trimTranscript(msg.transcript, cfg.maxTranscriptChars);
-    await streamSummary(port, cfg, msg.title || "Untitled", transcript);
+    try {
+      if (msg.type === "summarize") await streamSummary(port, cfg, msg.title || "Untitled", msg.transcript);
+      else await streamFollowup(port, cfg, msg);
+    } catch (e) {
+      port.postMessage({ type: "error", error: e.message });
+    }
   });
 });
 

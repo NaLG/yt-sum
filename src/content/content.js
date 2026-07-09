@@ -265,17 +265,89 @@
     }
     setPanel(panel, `Transcript ready (${transcript.segments.length} lines). Summarizing…`);
     const body = panel.querySelector(".yapsum-panel-body");
+    const title = document.title.replace(" - YouTube", "");
     try {
       let acc = "";
       let lastRender = 0;
-      const summary = await requestSummary(transcript, (chunk) => {
-        acc += chunk;
-        const now = Date.now();
-        if (now - lastRender > 80) { lastRender = now; renderMarkdown(acc, body); } // live, throttled
-      });
-      renderMarkdown(summary != null ? summary : acc, body); // final clean render
+      const summary = await requestLLM(
+        { type: "summarize", videoId: transcript.videoId, title, transcript: transcript.text },
+        {
+          onStage: (text) => { if (!acc) setPanel(panel, text); }, // chunked-progress, pre-stream
+          onChunk: (chunk) => {
+            acc += chunk;
+            const now = Date.now();
+            if (now - lastRender > 80) { lastRender = now; renderMarkdown(acc, body); } // live, throttled
+          },
+        }
+      );
+      const finalText = summary != null ? summary : acc;
+      renderMarkdown(finalText, body); // final clean render
+      mountFollowup(panel, { title, transcript: transcript.text, summary: finalText });
     } catch (e) {
       setPanel(panel, `Summary failed:\n\n${e.message}`, true);
+    }
+  }
+
+  // Follow-up Q&A: a text field under the summary. Each question is sent with
+  // the transcript, the summary, and prior Q&A turns; the streamed answer is
+  // appended to the panel body (all rendering injection-safe).
+  function mountFollowup(panel, ctx) {
+    panel.querySelector(".yapsum-ask")?.remove();
+    const bar = document.createElement("div");
+    bar.className = "yapsum-ask";
+    const input = document.createElement("input");
+    input.type = "text";
+    input.placeholder = "Ask a follow-up about this video…";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = "Ask";
+    bar.append(input, btn);
+    panel.appendChild(bar);
+
+    const body = panel.querySelector(".yapsum-panel-body");
+    const qa = [];
+    const ask = async () => {
+      const question = input.value.trim();
+      if (!question || input.disabled) return;
+      input.disabled = btn.disabled = true;
+      const qEl = document.createElement("p");
+      qEl.className = "yapsum-qa-q";
+      qEl.textContent = question; // textContent only — injection-safe
+      const aEl = document.createElement("div");
+      aEl.className = "yapsum-qa-a";
+      aEl.textContent = "…";
+      body.append(qEl, aEl);
+      aEl.scrollIntoView({ block: "nearest" });
+      try {
+        let acc = "", lastRender = 0;
+        const answer = await requestLLM(
+          { type: "followup", title: ctx.title, transcript: ctx.transcript, summary: ctx.summary, qa, question },
+          {
+            onChunk: (c) => {
+              acc += c;
+              const now = Date.now();
+              if (now - lastRender > 80) { lastRender = now; renderMarkdown(acc, aEl); }
+            },
+          }
+        );
+        const finalAnswer = answer != null ? answer : acc;
+        renderMarkdown(finalAnswer, aEl);
+        qa.push({ q: question, a: finalAnswer });
+        input.value = "";
+      } catch (e) {
+        aEl.classList.add("yapsum-error");
+        aEl.textContent = `Follow-up failed: ${e.message}`;
+      }
+      input.disabled = btn.disabled = false;
+      input.focus();
+    };
+    btn.addEventListener("click", ask);
+    // Keep YouTube's global hotkeys (space, k, f, …) away from the field.
+    for (const ev of ["keydown", "keyup", "keypress"]) {
+      input.addEventListener(ev, (e) => {
+        e.stopPropagation();
+        if (ev === "keydown" && e.key === "Enter") { e.preventDefault(); ask(); }
+      });
     }
   }
 
@@ -345,10 +417,11 @@
     }
   }
 
-  // Ask the background script to run the LLM call (keeps the API key out of the
+  // Ask the background script to run an LLM call (keeps the API key out of the
   // page context and centralizes provider logic). Streaming chunks arrive via
-  // a port; returns the final text.
-  function requestSummary(transcript, onChunk) {
+  // a port; "stage" messages report chunked-summarization progress. Returns
+  // the final text.
+  function requestLLM(payload, { onChunk, onStage } = {}) {
     return new Promise((resolve, reject) => {
       const port = browser.runtime.connect({ name: "summarize" });
       let acc = "";
@@ -356,6 +429,8 @@
         if (msg.type === "chunk") {
           acc += msg.text;
           onChunk?.(msg.text);
+        } else if (msg.type === "stage") {
+          onStage?.(msg.text);
         } else if (msg.type === "done") {
           resolve(msg.text ?? acc);
           port.disconnect();
@@ -364,12 +439,7 @@
           port.disconnect();
         }
       });
-      port.postMessage({
-        type: "summarize",
-        videoId: transcript.videoId,
-        title: document.title.replace(" - YouTube", ""),
-        transcript: transcript.text,
-      });
+      port.postMessage(payload);
     });
   }
 
