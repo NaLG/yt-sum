@@ -13,15 +13,17 @@ Install it from *inside* Firefox instead:
 
 1. Get the signed `.xpi` onto the phone (download it in Firefox, or transfer it —
    it lands in Downloads).
-2. **⋮ menu → Settings → Extensions** (aka Add-ons).
-3. On that screen tap the **⋮ (three-dot) at the top-right → "Install extension
-   from file"**. (Verified present in release Firefox **152**.)
-4. Pick the `.xpi` from Downloads → **Add** → grant the permission prompt.
-   This prompt is where a *signed* install gets `webRequest` — the permission a
-   plain sideload/dev-install doesn't get.
-5. Use it: open a YouTube video → **⋮ → Desktop site** (mobile YouTube exposes no
-   transcript) → tap **Summarize**. Set your provider + API key first via the
-   yap-sum toolbar popup → Settings.
+2. **Unlock the developer menu** (this is the gate — "Install extension from
+   file" is hidden until you do it): **⋮ → Settings → About Firefox**, then tap
+   the **Firefox logo / wordmark ~5 times** until it says debug is enabled.
+3. Back in **Settings → (Advanced) Extensions**, the **"Install extension from
+   file"** option now appears (via the page's ⋮ / a new entry). Pick the `.xpi`
+   from Downloads → **Add** → grant the permission prompt. That prompt is where a
+   *signed* install gets `webRequest` (a plain dev/temp install doesn't).
+4. Use it: open a YouTube video → tap **Summarize**. (Confirmed on a real phone:
+   works on the mobile page directly — no "Desktop site" needed once installed as
+   a real signed add-on; the network intercept grabs the transcript.) Set your
+   provider + API key first via the yap-sum toolbar popup → Settings.
 
 ## No-signing alternative: Firefox Nightly
 
