@@ -20,12 +20,77 @@ function updateHint() {
   $("baseUrlHint").textContent = BASE_URL_HINTS[$("provider").value] || "";
 }
 
+// Curated fallback suggestions so the dropdown is never empty, even before a
+// live load. Replaced by the real /models list when "Load models" is clicked.
+const FALLBACK_MODELS = {
+  openai: [
+    "google/gemini-3.5-flash",
+    "z-ai/glm-5.2",
+    "google/gemini-3.1-flash-lite",
+    "z-ai/glm-4.7-flash",
+    "openai/gpt-5-mini",
+    "anthropic/claude-haiku-4.5",
+    "gpt-4o-mini",
+  ],
+  anthropic: ["claude-fable-5", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5"],
+};
+
+function fillModelList(ids) {
+  const dl = $("modelList");
+  dl.innerHTML = "";
+  for (const id of ids) {
+    const opt = document.createElement("option");
+    opt.value = id;
+    dl.appendChild(opt);
+  }
+}
+
+// Fetch the provider's live model catalog from {baseUrl}/models. Works for any
+// OpenAI-compatible endpoint (OpenRouter, GLM, Gemini, Groq, Ollama, LM Studio)
+// and for the native Anthropic API — both return { data: [{ id }] }.
+async function loadModels(silent = false) {
+  const provider = $("provider").value;
+  const baseUrl = $("baseUrl").value.replace(/\/$/, "");
+  const apiKey = $("apiKey").value;
+  if (!baseUrl) {
+    if (!silent) setStatus("Enter a base URL first.", "err");
+    return;
+  }
+  if (!silent) setStatus("Loading models…", "");
+  try {
+    await ensureHostPermission(baseUrl);
+    const headers =
+      provider === "anthropic"
+        ? { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" }
+        : apiKey
+          ? { authorization: `Bearer ${apiKey}` }
+          : {};
+    const res = await fetch(`${baseUrl}/models`, { headers });
+    if (!res.ok) throw new Error(`${res.status} ${(await res.text()).slice(0, 120)}`);
+    const json = await res.json();
+    const ids = (json.data || json.models || [])
+      .map((m) => m.id || m.name)
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+    if (!ids.length) throw new Error("endpoint returned no models");
+    fillModelList(ids);
+    if (!silent) setStatus(`Loaded ${ids.length} models — click the Model field to choose.`, "ok");
+  } catch (e) {
+    // Fall back to curated suggestions so the dropdown still works.
+    fillModelList(FALLBACK_MODELS[provider] || []);
+    if (!silent) setStatus(`Couldn't load live model list (${e.message}). Showing suggestions; you can also type any id.`, "err");
+  }
+}
+
 async function load() {
   DEFAULTS = await browser.runtime.sendMessage({ type: "getDefaults" });
   const stored = await browser.storage.local.get(FIELDS);
   const cfg = { ...DEFAULTS, ...stored };
   for (const f of FIELDS) if ($(f)) $(f).value = cfg[f];
   updateHint();
+  // Seed the dropdown with curated suggestions immediately; a live load
+  // refreshes them when the user clicks "Load models" (or Test connection).
+  fillModelList(FALLBACK_MODELS[cfg.provider] || []);
 }
 
 // Ensure we have host permission to reach a non-default endpoint (local servers,
@@ -109,7 +174,11 @@ async function testConnection() {
   }
 }
 
-$("provider").addEventListener("change", updateHint);
+$("provider").addEventListener("change", () => {
+  updateHint();
+  fillModelList(FALLBACK_MODELS[$("provider").value] || []);
+});
+$("loadModels").addEventListener("click", () => loadModels(false));
 $("save").addEventListener("click", save);
 $("reset").addEventListener("click", reset);
 $("test").addEventListener("click", testConnection);

@@ -28,7 +28,12 @@
 
         <label>
           Model
-          <input id="model" type="text" spellcheck="false" placeholder="gpt-4o-mini" />
+          <div class="model-row">
+            <input id="model" list="modelList" type="text" spellcheck="false" placeholder="click ▾ to choose, or type a model id" />
+            <button type="button" id="loadModels" title="Load this provider's model list">↻ Load models</button>
+          </div>
+          <datalist id="modelList"></datalist>
+          <small id="modelHint">Click the field for a dropdown once models are loaded. Any id can be typed.</small>
         </label>
 
         <label>
