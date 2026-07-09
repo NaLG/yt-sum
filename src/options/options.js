@@ -10,6 +10,44 @@ const BASE_URL_HINTS = {
   anthropic: "https://api.anthropic.com/v1 (native Claude Messages API)",
 };
 
+// Clickable quick-setup presets. Clicking one fills provider + base URL + a
+// sensible default model.
+const PRESETS = [
+  { label: "OpenRouter", provider: "openai", baseUrl: "https://openrouter.ai/api/v1", model: "google/gemini-3.5-flash" },
+  { label: "OpenAI", provider: "openai", baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini" },
+  { label: "Google Gemini", provider: "openai", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", model: "gemini-flash-latest" },
+  { label: "GLM / Z.ai", provider: "openai", baseUrl: "https://api.z.ai/api/paas/v4", model: "glm-4.7-flash" },
+  { label: "Groq", provider: "openai", baseUrl: "https://api.groq.com/openai/v1", model: "" },
+  { label: "Ollama (local)", provider: "openai", baseUrl: "http://localhost:11434/v1", model: "llama3.2" },
+  { label: "LM Studio (local)", provider: "openai", baseUrl: "http://localhost:1234/v1", model: "" },
+  { label: "Anthropic (Claude)", provider: "anthropic", baseUrl: "https://api.anthropic.com/v1", model: "claude-fable-5" },
+];
+
+function renderPresets() {
+  const wrap = $("presetChips");
+  wrap.innerHTML = "";
+  PRESETS.forEach((p, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "preset-chip";
+    b.textContent = p.label;
+    b.title = p.baseUrl;
+    b.addEventListener("click", () => applyPreset(i));
+    wrap.appendChild(b);
+  });
+}
+
+function applyPreset(i) {
+  const p = PRESETS[i];
+  $("provider").value = p.provider;
+  $("baseUrl").value = p.baseUrl;
+  if (p.model) $("model").value = p.model;
+  updateHint();
+  fillModelList(FALLBACK_MODELS[p.provider] || []);
+  syncModelSelect();
+  setStatus(`Filled ${p.label}. Add your API key, then Save (or Load models to pick one).`, "ok");
+}
+
 function setStatus(msg, kind = "") {
   const el = $("status");
   el.textContent = msg;
@@ -35,14 +73,38 @@ const FALLBACK_MODELS = {
   anthropic: ["claude-fable-5", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5"],
 };
 
+// Populate the model <select> dropdown. The text input (#model) stays the
+// source of truth; picking from the dropdown writes into it, and it always has
+// a "Custom" escape hatch for ids not in the list.
+let currentModelIds = [];
 function fillModelList(ids) {
-  const dl = $("modelList");
-  dl.innerHTML = "";
+  currentModelIds = ids.slice();
+  const sel = $("modelSelect");
+  sel.innerHTML = "";
+  const placeholder = document.createElement("option");
+  placeholder.value = "";
+  placeholder.textContent = ids.length ? "— pick a model —" : "— (click Load models) —";
+  sel.appendChild(placeholder);
   for (const id of ids) {
     const opt = document.createElement("option");
     opt.value = id;
-    dl.appendChild(opt);
+    opt.textContent = id;
+    sel.appendChild(opt);
   }
+  const custom = document.createElement("option");
+  custom.value = "__custom__";
+  custom.textContent = "✏️ Custom / type your own…";
+  sel.appendChild(custom);
+  syncModelSelect();
+}
+
+// Reflect the text-input value in the dropdown selection.
+function syncModelSelect() {
+  const sel = $("modelSelect");
+  const val = $("model").value;
+  if (val && currentModelIds.includes(val)) sel.value = val;
+  else if (val) sel.value = "__custom__";
+  else sel.value = "";
 }
 
 // Fetch the provider's live model catalog from {baseUrl}/models. Works for any
@@ -178,8 +240,20 @@ $("provider").addEventListener("change", () => {
   updateHint();
   fillModelList(FALLBACK_MODELS[$("provider").value] || []);
 });
+// Dropdown → text input. "Custom" focuses the field for manual entry.
+$("modelSelect").addEventListener("change", () => {
+  const v = $("modelSelect").value;
+  if (v === "__custom__") {
+    $("model").focus();
+  } else if (v) {
+    $("model").value = v;
+  }
+});
+// Typing in the field re-syncs the dropdown (shows "Custom" for unlisted ids).
+$("model").addEventListener("input", syncModelSelect);
 $("loadModels").addEventListener("click", () => loadModels(false));
 $("save").addEventListener("click", save);
 $("reset").addEventListener("click", reset);
 $("test").addEventListener("click", testConnection);
+renderPresets();
 load();

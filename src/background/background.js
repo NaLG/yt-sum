@@ -10,7 +10,26 @@
 // ============================================================================
 
 const GT_URLS = ["*://*.youtube.com/youtubei/v1/get_transcript*"];
-const capturedByTab = new Map(); // tabId -> { at, json }
+const capturedByVideo = new Map(); // videoId -> { at, json }
+let lastCapture = null; // most recent, as a fallback when videoId can't be decoded
+
+// The get_transcript request body carries a base64 `params` protobuf whose
+// first field is the 11-char video id. Decode it so captures are keyed by
+// video — this way an already-fetched transcript (opened before Summarize, or
+// preloaded) is matched without needing to re-open the panel.
+function videoIdFromParams(params) {
+  try {
+    const bin = atob(String(params).replace(/-/g, "+").replace(/_/g, "/"));
+    if (bin.charCodeAt(0) === 0x0a && bin.charCodeAt(1) === 0x0b) {
+      const id = bin.slice(2, 13);
+      if (/^[\w-]{11}$/.test(id)) return id;
+    }
+    const m = bin.match(/[\w-]{11}/);
+    return m ? m[0] : null;
+  } catch {
+    return null;
+  }
+}
 
 // Force identity encoding on get_transcript so filterResponseData sees plain
 // JSON (avoids brotli/gzip we can't decode in the filter).
@@ -28,7 +47,14 @@ browser.webRequest.onBeforeSendHeaders.addListener(
 
 browser.webRequest.onBeforeRequest.addListener(
   (details) => {
-    // Only capture the page's own player requests, not our own fallback fetches.
+    let videoId = null;
+    try {
+      const raw = details.requestBody?.raw?.[0]?.bytes;
+      if (raw) videoId = videoIdFromParams(JSON.parse(new TextDecoder().decode(raw)).params);
+    } catch {
+      /* no/unparseable body — fall back to lastCapture */
+    }
+
     const filter = browser.webRequest.filterResponseData(details.requestId);
     const chunks = [];
     filter.ondata = (event) => {
@@ -43,10 +69,11 @@ browser.webRequest.onBeforeRequest.addListener(
         const all = new Uint8Array(total);
         let off = 0;
         for (const c of chunks) { all.set(c, off); off += c.length; }
-        const text = new TextDecoder("utf-8").decode(all);
-        const json = JSON.parse(text);
+        const json = JSON.parse(new TextDecoder("utf-8").decode(all));
         if (JSON.stringify(json).includes("transcriptSegmentRenderer")) {
-          capturedByTab.set(details.tabId, { at: Date.now(), json });
+          const entry = { at: Date.now(), json };
+          lastCapture = entry;
+          if (videoId) capturedByVideo.set(videoId, entry);
         }
       } catch {
         /* not parseable — ignore */
@@ -56,8 +83,23 @@ browser.webRequest.onBeforeRequest.addListener(
     return {};
   },
   { urls: GT_URLS },
-  ["blocking"]
+  ["blocking", "requestBody"]
 );
+
+function getCapturedFor(videoId) {
+  const byId = videoId && capturedByVideo.get(videoId);
+  if (byId && Date.now() - byId.at < 120000) return byId.json;
+  // Fallback: a very fresh capture whose videoId we couldn't decode is almost
+  // certainly the one the caller just triggered.
+  if (lastCapture && Date.now() - lastCapture.at < 20000) return lastCapture.json;
+  return null;
+}
+
+// Keep the map from growing without bound.
+function pruneCaptures() {
+  const cutoff = Date.now() - 600000;
+  for (const [k, v] of capturedByVideo) if (v.at < cutoff) capturedByVideo.delete(k);
+}
 
 // yap-sum background (event page) — runs the LLM call.
 // Keeps the API key out of page context and centralizes provider logic.
@@ -234,16 +276,11 @@ browser.runtime.onConnect.addListener((port) => {
 // content script.
 browser.runtime.onMessage.addListener((msg, sender) => {
   if (msg?.type === "getDefaults") return Promise.resolve(DEFAULTS);
-  const tabId = sender.tab?.id;
   if (msg?.type === "armCapture") {
-    // Clear any stale capture from a previous video in this tab.
-    if (tabId != null) capturedByTab.delete(tabId);
+    pruneCaptures();
     return Promise.resolve({ armed: true });
   }
   if (msg?.type === "getCaptured") {
-    const cap = tabId != null ? capturedByTab.get(tabId) : null;
-    // Only serve a fresh capture (guards against SPA nav races).
-    if (cap && Date.now() - cap.at < 120000) return Promise.resolve({ json: cap.json });
-    return Promise.resolve({ json: null });
+    return Promise.resolve({ json: getCapturedFor(msg.videoId) });
   }
 });

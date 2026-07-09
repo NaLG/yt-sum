@@ -88,7 +88,28 @@ button:hover { filter: brightness(1.05); }
 .status.ok { color: #1a7f37; }
 .status.err { color: #d1242f; }
 
-.presets { margin-top: 28px; color: var(--muted); }
-.presets summary { cursor: pointer; font-weight: 600; }
-.presets code { background: var(--field); padding: 1px 5px; border-radius: 4px; font-size: 13px; }
-.presets ul { padding-left: 18px; }
+.presets-bar {
+  margin: 0 0 22px;
+  padding: 14px;
+  background: var(--field);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.presets-label { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+.preset-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.preset-chip {
+  padding: 7px 13px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.preset-chip:hover { border-color: var(--accent); color: var(--accent); }
+
+#modelSelect { flex: 1; min-width: 0; }
+#model { margin-top: 8px; }
+
+.footnote { margin-top: 28px; font-size: 12px; color: var(--muted); }

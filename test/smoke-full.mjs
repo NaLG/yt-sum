@@ -111,10 +111,28 @@ writeFileSync(
   join(ext, "smoke-reporter.js"),
   `(async () => {
      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+     const videoId = globalThis.yapSum.currentVideoId();
      let btn = null;
      for (let i = 0; i < 40 && !btn; i++) { await sleep(500); btn = document.getElementById("yapsum-btn"); }
      if (!btn) { browser.runtime.sendMessage({ __smoke: true, ok: false, error: "no Summarize button" }); return; }
-     await sleep(500);
+
+     // Reproduce the real user flow: the transcript is ALREADY OPEN before the
+     // user clicks Summarize. Open it, wait for the background to capture the
+     // player's get_transcript response, then verify the capture SURVIVES the
+     // arm step (the bug: arming used to wipe it) before summarizing.
+     let survivedArm = null;
+     try {
+       await globalThis.yapSum.openTranscriptPanel();
+       let captured = false;
+       for (let i = 0; i < 40 && !captured; i++) {
+         await sleep(400);
+         captured = !!(await browser.runtime.sendMessage({ type: "getCaptured", videoId }))?.json;
+       }
+       await browser.runtime.sendMessage({ type: "armCapture" });
+       survivedArm = !!(await browser.runtime.sendMessage({ type: "getCaptured", videoId }))?.json;
+     } catch (e) { survivedArm = "error: " + e.message; }
+
+     await sleep(300);
      btn.click();
      // Wait for the FULL streamed summary to settle (not just its first token).
      // The mock ends its summary with "point two"; also stop on error or when
@@ -135,6 +153,7 @@ writeFileSync(
        __smoke: true,
        ok: text.includes("SUMMARY_OK"),
        method: document.documentElement.dataset.yapsumMethod || "(unknown)",
+       survivedArm,
        panelText: text.slice(0, 400),
        isError: body ? body.classList.contains("yapsum-error") : null,
      });
@@ -156,14 +175,21 @@ const report = await new Promise((resolve) => {
 try { child.kill("SIGTERM"); } catch {}
 server.close();
 
-console.log("\n--- full-path verification ---");
+console.log("\n--- full-path verification (transcript pre-opened, as a real user) ---");
+console.log("capture survived arm step:", report.survivedArm);
 console.log("extraction method used:", report.method);
 console.log("LLM endpoint received request:", JSON.stringify(sawLLMRequest));
 console.log("panel showed:", JSON.stringify(report.panelText || report.error));
 const pass =
   report.ok &&
+  report.survivedArm === true &&
+  report.method === "intercept" &&
   sawLLMRequest?.valid &&
   sawLLMRequest?.transcriptChars > 1000 &&
   (report.panelText || "").includes(`transcript_chars=${sawLLMRequest.transcriptChars}`);
-console.log(pass ? "\n✅ PASS — extract → background → HTTP → SSE stream → panel all verified" : "\n❌ FAIL");
+console.log(
+  pass
+    ? "\n✅ PASS — pre-opened transcript captured, survived arm, summarized via intercept"
+    : "\n❌ FAIL"
+);
 process.exit(pass ? 0 : 1);

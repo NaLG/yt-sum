@@ -11,6 +11,11 @@
       <h1>yap-sum</h1>
       <p class="sub">One-click YouTube summaries through your own LLM key. Nothing leaves your browser except the transcript you send to the endpoint you choose.</p>
 
+      <div class="presets-bar">
+        <div class="presets-label">Quick setup — click a provider to fill the endpoint, then pick a model &amp; add your key:</div>
+        <div id="presetChips" class="preset-chips"></div>
+      </div>
+
       <form id="settings">
         <label>
           Provider
@@ -29,11 +34,13 @@
         <label>
           Model
           <div class="model-row">
-            <input id="model" list="modelList" type="text" spellcheck="false" placeholder="click ▾ to choose, or type a model id" />
-            <button type="button" id="loadModels" title="Load this provider's model list">↻ Load models</button>
+            <select id="modelSelect">
+              <option value="">— pick a model —</option>
+            </select>
+            <button type="button" id="loadModels" title="Load this provider's live model list">↻ Load models</button>
           </div>
-          <datalist id="modelList"></datalist>
-          <small id="modelHint">Click the field for a dropdown once models are loaded. Any id can be typed.</small>
+          <input id="model" type="text" spellcheck="false" placeholder="model id (pick above, or type a custom one)" />
+          <small id="modelHint">Pick from the dropdown, or type any model id. Click "Load models" to pull your provider's live catalog.</small>
         </label>
 
         <label>
@@ -66,20 +73,7 @@
         <p id="status" class="status" aria-live="polite"></p>
       </form>
 
-      <details class="presets">
-        <summary>Preset endpoints</summary>
-        <ul>
-          <li><b>OpenAI</b> — <code>https://api.openai.com/v1</code> · <code>gpt-4o-mini</code></li>
-          <li><b>GLM / Z.ai</b> — <code>https://api.z.ai/api/paas/v4</code> · <code>glm-4.7-flash</code> (free tier)</li>
-          <li><b>Gemini</b> — <code>https://generativelanguage.googleapis.com/v1beta/openai</code> · <code>gemini-2.5-flash</code></li>
-          <li><b>OpenRouter</b> — <code>https://openrouter.ai/api/v1</code> · any model</li>
-          <li><b>Groq</b> — <code>https://api.groq.com/openai/v1</code></li>
-          <li><b>Ollama (local)</b> — <code>http://localhost:11434/v1</code> · <code>llama3.2</code></li>
-          <li><b>LM Studio (local)</b> — <code>http://localhost:1234/v1</code></li>
-          <li><b>Anthropic</b> — provider = Anthropic · <code>https://api.anthropic.com/v1</code> · <code>claude-fable-5</code></li>
-        </ul>
-        <p><small>Local endpoints and non-listed hosts need host permission — yap-sum will request it the first time you save such a URL.</small></p>
-      </details>
+      <p class="footnote">Local endpoints and non-listed hosts need host permission — yap-sum requests it the first time you save such a URL.</p>
     </main>
     <script src="options.js"></script>
   </body>
