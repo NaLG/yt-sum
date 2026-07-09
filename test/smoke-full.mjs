@@ -149,11 +149,16 @@ writeFileSync(
        if (stable >= 3 && text.includes("SUMMARY_OK")) break; // settled
      }
      const body = document.querySelector("#yapsum-panel .yapsum-panel-body");
+     // Confirm the diagnostic telemetry captured the key events.
+     const dbg = await browser.runtime.sendMessage({ type: "getDebug" });
+     const bgLog = (dbg && dbg.log) || [];
      browser.runtime.sendMessage({
        __smoke: true,
        ok: text.includes("SUMMARY_OK"),
        method: document.documentElement.dataset.yapsumMethod || "(unknown)",
        survivedArm,
+       bgSawRequest: bgLog.some((e) => e.m === "get_transcript request seen"),
+       bgSawResponse: bgLog.some((e) => e.m === "get_transcript response" && e.hasSegs),
        panelText: text.slice(0, 400),
        isError: body ? body.classList.contains("yapsum-error") : null,
      });
@@ -177,6 +182,7 @@ server.close();
 
 console.log("\n--- full-path verification (transcript pre-opened, as a real user) ---");
 console.log("capture survived arm step:", report.survivedArm);
+console.log("diagnostics saw request/response:", report.bgSawRequest, "/", report.bgSawResponse);
 console.log("extraction method used:", report.method);
 console.log("LLM endpoint received request:", JSON.stringify(sawLLMRequest));
 console.log("panel showed:", JSON.stringify(report.panelText || report.error));
@@ -184,6 +190,8 @@ const pass =
   report.ok &&
   report.survivedArm === true &&
   report.method === "intercept" &&
+  report.bgSawRequest === true &&
+  report.bgSawResponse === true &&
   sawLLMRequest?.valid &&
   sawLLMRequest?.transcriptChars > 1000 &&
   (report.panelText || "").includes(`transcript_chars=${sawLLMRequest.transcriptChars}`);

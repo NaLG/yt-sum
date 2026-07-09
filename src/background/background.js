@@ -13,6 +13,17 @@ const GT_URLS = ["*://*.youtube.com/youtubei/v1/get_transcript*"];
 const capturedByVideo = new Map(); // videoId -> { at, json }
 let lastCapture = null; // most recent, as a fallback when videoId can't be decoded
 
+// ---- diagnostics ring buffer ------------------------------------------------
+const START = Date.now();
+const DBG = [];
+function dbg(m, extra) {
+  const e = { dt: Date.now() - START, m, ...(extra || {}) };
+  DBG.push(e);
+  if (DBG.length > 300) DBG.shift();
+  try { console.log("[yap-sum:bg]", m, extra || ""); } catch {}
+}
+dbg("background loaded; webRequest available", { has: typeof browser.webRequest?.filterResponseData === "function" });
+
 // The get_transcript request body carries a base64 `params` protobuf whose
 // first field is the 11-char video id. Decode it so captures are keyed by
 // video — this way an already-fetched transcript (opened before Summarize, or
@@ -48,12 +59,17 @@ browser.webRequest.onBeforeSendHeaders.addListener(
 browser.webRequest.onBeforeRequest.addListener(
   (details) => {
     let videoId = null;
+    let bodyOk = false;
     try {
       const raw = details.requestBody?.raw?.[0]?.bytes;
-      if (raw) videoId = videoIdFromParams(JSON.parse(new TextDecoder().decode(raw)).params);
+      if (raw) {
+        videoId = videoIdFromParams(JSON.parse(new TextDecoder().decode(raw)).params);
+        bodyOk = true;
+      }
     } catch {
       /* no/unparseable body — fall back to lastCapture */
     }
+    dbg("get_transcript request seen", { videoId, bodyOk, method: details.method });
 
     const filter = browser.webRequest.filterResponseData(details.requestId);
     const chunks = [];
@@ -69,17 +85,21 @@ browser.webRequest.onBeforeRequest.addListener(
         const all = new Uint8Array(total);
         let off = 0;
         for (const c of chunks) { all.set(c, off); off += c.length; }
-        const json = JSON.parse(new TextDecoder("utf-8").decode(all));
-        if (JSON.stringify(json).includes("transcriptSegmentRenderer")) {
+        const text = new TextDecoder("utf-8").decode(all);
+        let json = null, parseErr = null;
+        try { json = JSON.parse(text); } catch (e) { parseErr = String(e); }
+        const hasSegs = !!json && JSON.stringify(json).includes("transcriptSegmentRenderer");
+        dbg("get_transcript response", { bytes: total, first80: text.slice(0, 80), parseErr, hasSegs, videoId });
+        if (hasSegs) {
           const entry = { at: Date.now(), json };
           lastCapture = entry;
           if (videoId) capturedByVideo.set(videoId, entry);
         }
-      } catch {
-        /* not parseable — ignore */
+      } catch (e) {
+        dbg("get_transcript capture error", { err: String(e) });
       }
     };
-    filter.onerror = () => {};
+    filter.onerror = () => dbg("filter error", { err: filter.error });
     return {};
   },
   { urls: GT_URLS },
@@ -281,6 +301,15 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     return Promise.resolve({ armed: true });
   }
   if (msg?.type === "getCaptured") {
-    return Promise.resolve({ json: getCapturedFor(msg.videoId) });
+    const json = getCapturedFor(msg.videoId);
+    dbg("getCaptured", { videoId: msg.videoId, hit: !!json });
+    return Promise.resolve({ json });
+  }
+  if (msg?.type === "getDebug") {
+    return Promise.resolve({
+      log: DBG.slice(-120),
+      capturedVideos: [...capturedByVideo.keys()],
+      lastCaptureAgeMs: lastCapture ? Date.now() - lastCapture.at : null,
+    });
   }
 });

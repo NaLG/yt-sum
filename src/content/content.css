@@ -72,6 +72,20 @@
   font-family: ui-monospace, monospace;
   font-size: 13px;
 }
+.yapsum-debug-btn {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 8px;
+  background: #0b57d0;
+  color: #fff;
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.yapsum-debug-btn:hover { background: #0842a0; }
 
 /* Mobile (m.youtube.com): full-width bottom sheet */
 @media (max-width: 640px) {

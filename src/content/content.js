@@ -84,35 +84,90 @@
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+  // Per-attempt step log for diagnostics.
+  let flow = [];
+  function clog(m, x) {
+    flow.push({ t: Date.now(), m, ...(x || {}) });
+    try { console.log("[yap-sum]", m, x || ""); } catch {}
+  }
+
   // Primary extraction: let YouTube's player fetch the transcript and capture
   // its JSON response at the network layer (background webRequest filter), which
   // is robust to UI variants. Falls back to the extractor's DOM/network methods.
   async function getTranscript() {
     const videoId = NS.currentVideoId();
     const started = performance.now();
+    flow = [];
+    clog("start", { videoId, url: location.href });
     try {
       await browser.runtime.sendMessage({ type: "armCapture" });
-      // Maybe the player already fetched it on page load (some variants preload).
+      // Maybe the player already fetched it (preloaded, or opened earlier).
       let cap = (await browser.runtime.sendMessage({ type: "getCaptured", videoId }))?.json;
+      clog("preloaded capture?", { hit: !!cap });
       if (!cap) {
-        // Nudge the player to fetch it by opening the transcript panel.
-        try { await NS.openTranscriptPanel(); } catch { /* may be preloaded/already open */ }
-        for (let i = 0; i < 50 && !cap; i++) {
+        let opened = false, openErr = null;
+        try { opened = await NS.openTranscriptPanel(); } catch (e) { openErr = e.message; }
+        clog("openTranscriptPanel", { opened, openErr });
+        for (let i = 0; i < 40 && !cap; i++) {
           await sleep(300);
           cap = (await browser.runtime.sendMessage({ type: "getCaptured", videoId }))?.json;
         }
+        clog("after open+poll", { hit: !!cap });
+      }
+      if (!cap) {
+        // The transcript may have been fetched before our listener existed
+        // (extension reloaded on an open video). Force a fresh request.
+        let retriggerErr = null;
+        try { await NS.forceTranscriptFetch(); } catch (e) { retriggerErr = e.message; }
+        clog("forceTranscriptFetch", { retriggerErr });
+        for (let i = 0; i < 40 && !cap; i++) {
+          await sleep(300);
+          cap = (await browser.runtime.sendMessage({ type: "getCaptured", videoId }))?.json;
+        }
+        clog("after retrigger+poll", { hit: !!cap });
       }
       if (cap) {
         const segs = NS.parseGetTranscriptJson(cap);
+        clog("parsed capture", { segments: segs ? segs.length : 0 });
         if (segs) {
           document.documentElement.dataset.yapsumMethod = "intercept";
           return NS.buildResult(videoId, "intercept", segs, { ms: Math.round(performance.now() - started) }, []);
         }
       }
-    } catch { /* fall through to the extractor's own methods */ }
+    } catch (e) {
+      clog("intercept path threw", { err: String(e) });
+    }
+    clog("falling back to extractor methods");
     const r = await NS.extractTranscript(videoId);
     document.documentElement.dataset.yapsumMethod = r.method;
+    clog("fallback result", { method: r.method });
     return r;
+  }
+
+  // Assemble a diagnostic bundle: content-side step log + background ring buffer
+  // + page facts. Used by the "Copy debug info" button on failures.
+  async function buildDebugBundle(errorMsg) {
+    let bg = null;
+    try { bg = await browser.runtime.sendMessage({ type: "getDebug" }); } catch (e) { bg = { error: String(e) }; }
+    const q = (s) => document.querySelectorAll(s).length;
+    let btn = document.querySelector('button[aria-label*="transcript" i]');
+    if (!btn) btn = Array.from(document.querySelectorAll("button, tp-yt-paper-button, yt-button-shape")).find((x) => /transcript/i.test(x.getAttribute("aria-label") || x.textContent || ""));
+    return {
+      yapsum: "debug-v1",
+      url: location.href,
+      videoId: NS.currentVideoId(),
+      error: errorMsg,
+      ua: navigator.userAgent,
+      pageFacts: {
+        transcriptButtonFound: !!btn,
+        transcriptButtonLabel: btn ? (btn.getAttribute("aria-label") || btn.textContent || "").trim().slice(0, 40) : null,
+        segNodes: q("ytd-transcript-segment-renderer"),
+        segListNodes: q("ytd-transcript-segment-list-renderer"),
+        engagementPanels: q("ytd-engagement-panel-section-list-renderer"),
+      },
+      content: flow,
+      background: bg,
+    };
   }
 
   async function onSummarizeClick() {
@@ -122,7 +177,7 @@
     try {
       transcript = await getTranscript();
     } catch (e) {
-      setPanel(panel, `Couldn't get a transcript for this video.\n\n${e.message}`, true);
+      await showError(panel, `Couldn't get a transcript for this video.\n\n${e.message}`);
       return;
     }
     setPanel(panel, `Transcript ready (${transcript.segments.length} lines). Summarizing…`);
@@ -189,6 +244,38 @@
     const body = panel.querySelector(".yapsum-panel-body");
     body.textContent = text;
     body.classList.toggle("yapsum-error", isError);
+    delete body.dataset.streaming;
+  }
+
+  // Error state with a one-click "Copy debug info" button. Also dumps the bundle
+  // to the console so it's grabbable from devtools even without clicking.
+  async function showError(panel, message) {
+    const bundle = await buildDebugBundle(message);
+    try { console.log("[yap-sum] DEBUG BUNDLE", JSON.stringify(bundle)); } catch {}
+    const body = panel.querySelector(".yapsum-panel-body");
+    body.classList.add("yapsum-error");
+    delete body.dataset.streaming;
+    body.textContent = message + "\n\n";
+    const btn = document.createElement("button");
+    btn.className = "yapsum-debug-btn";
+    btn.textContent = "Copy debug info";
+    btn.addEventListener("click", async () => {
+      const text = JSON.stringify(bundle, null, 2);
+      let ok = false;
+      try { await navigator.clipboard.writeText(text); ok = true; } catch {
+        // Fallback for contexts where the async clipboard API is blocked.
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        try { ok = document.execCommand("copy"); } catch {}
+        ta.remove();
+      }
+      btn.textContent = ok ? "Copied ✓ — paste it to the developer" : "Copy failed — see console";
+    });
+    body.appendChild(btn);
   }
   function appendPanel(panel, text) {
     const body = panel.querySelector(".yapsum-panel-body");

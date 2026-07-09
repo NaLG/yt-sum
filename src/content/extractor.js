@@ -114,6 +114,21 @@
     return true;
   };
 
+  // Force the player to make a FRESH get_transcript request by toggling the
+  // transcript control off and on. Needed when the transcript was already
+  // fetched before our network listener existed (e.g. the extension was
+  // reloaded on an open video), so nothing was captured and the panel is
+  // already open (re-opening alone fires no new request).
+  NS.forceTranscriptFetch = async function forceTranscriptFetch() {
+    const btn = findTranscriptButton();
+    if (!btn) throw new Error("no transcript control to retrigger");
+    btn.scrollIntoView();
+    btn.click(); // toggle (closes if open)
+    await sleep(800);
+    btn.click(); // toggle back open -> fresh get_transcript
+    return true;
+  };
+
   async function viaPanelScrape() {
     let segs = readPanelSegments();
     if (!segs.length) {
