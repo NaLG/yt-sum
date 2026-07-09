@@ -67,6 +67,20 @@
   font-weight: 600;
   border-bottom: 1px solid rgba(128, 128, 128, 0.2);
 }
+.yapsum-panel-title {
+  flex: 1;
+  cursor: pointer;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.yapsum-panel-title::after {
+  content: "▾";
+  font-size: 11px;
+  opacity: 0.6;
+  transition: transform 0.15s ease;
+}
 .yapsum-panel-close {
   border: none;
   background: transparent;
@@ -75,6 +89,22 @@
   cursor: pointer;
   line-height: 1;
 }
+
+/* Collapsed: fold away the body + Q&A, dock as a compact bar at the bottom.
+   The panel node stays in the DOM (summary preserved), so tapping the title
+   again restores it instantly with no re-fetch. */
+.yapsum-panel.yapsum-collapsed {
+  top: auto;
+  bottom: 16px;
+  height: auto;
+  max-height: none;
+  width: auto;
+  min-width: 180px;
+}
+.yapsum-panel.yapsum-collapsed .yapsum-panel-bar { border-bottom: none; }
+.yapsum-panel.yapsum-collapsed .yapsum-panel-body,
+.yapsum-panel.yapsum-collapsed .yapsum-ask { display: none; }
+.yapsum-panel.yapsum-collapsed .yapsum-panel-title::after { transform: rotate(-90deg); }
 .yapsum-panel-body {
   padding: 14px 16px;
   overflow-y: auto;
@@ -187,5 +217,14 @@
     width: 100%;
     max-height: 70vh;
     border-radius: 12px 12px 0 0;
+  }
+  /* Collapsed on mobile stays docked full-width at the very bottom (a thin
+     title bar), rather than a floating pill. */
+  .yapsum-panel.yapsum-collapsed {
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    min-width: 0;
   }
 }

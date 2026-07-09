@@ -185,6 +185,23 @@ writeFileSync(
          }
        } catch (e) { followupErr = String(e); }
 
+       // Collapse: tap the title → panel folds (body hidden, node preserved);
+       // tap again → restores. The summary text must survive the round-trip.
+       let collapseOk = false, collapseErr = null;
+       try {
+         const panel = document.getElementById("yapsum-panel");
+         const title = panel.querySelector(".yapsum-panel-title");
+         const bodyEl = panel.querySelector(".yapsum-panel-body");
+         const savedText = bodyEl.textContent;
+         title.click(); await sleep(150);
+         const collapsed = panel.classList.contains("yapsum-collapsed") && getComputedStyle(bodyEl).display === "none";
+         title.click(); await sleep(150);
+         const expanded = !panel.classList.contains("yapsum-collapsed") && getComputedStyle(bodyEl).display !== "none";
+         const preserved = bodyEl.textContent === savedText && savedText.includes("SUMMARY_OK");
+         collapseOk = collapsed && expanded && preserved;
+         if (!collapseOk) collapseErr = JSON.stringify({ collapsed, expanded, preserved });
+       } catch (e) { collapseErr = String(e); }
+
        let bgLog = null;
        try {
          const dbg = await browser.runtime.sendMessage({ type: "getDebug" });
@@ -194,6 +211,7 @@ writeFileSync(
          __smoke: true,
          bgLog,
          followupOk, followupRendered, followupErr,
+         collapseOk, collapseErr,
          ok: text.includes("SUMMARY_OK"),
          method: document.documentElement.dataset.yapsumMethod || "(unknown)",
          scrapeRows,
@@ -232,6 +250,7 @@ console.log("LLM summary request:", JSON.stringify(llm.summary));
 if (CHUNK) console.log("LLM part requests:", JSON.stringify(llm.parts));
 console.log("LLM follow-up request:", JSON.stringify(llm.followup));
 console.log("follow-up:", report.followupOk, "rendered:", report.followupRendered, report.followupErr || "");
+console.log("collapse/expand preserves summary:", report.collapseOk, report.collapseErr || "");
 console.log("panel showed:", JSON.stringify(report.panelText || report.error));
 if (!report.ok && report.bgLog) console.log("bg capture log:", JSON.stringify(report.bgLog, null, 1));
 const partChars = llm.parts.reduce((a, p) => a + p.chars, 0);
@@ -250,6 +269,7 @@ const pass =
     : llm.summary.transcriptChars > 5000) &&
   report.followupOk === true &&
   report.followupRendered === true &&
+  report.collapseOk === true &&
   llm.followup?.valid &&
   llm.followup?.messages >= 4; // system+transcript+assistant-summary+question
 console.log(

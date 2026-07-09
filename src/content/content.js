@@ -137,6 +137,34 @@
     }
     clog("scrape visible?", { segments: 0 });
 
+    // 2.5 Playback trigger (mobile). The m.youtube.com player doesn't fetch the
+    //     transcript/caption track until playback begins — so a cold Summarize
+    //     finds nothing, but "play, then Summarize" works. We kick playback
+    //     MUTED (the Summarize tap is the user gesture that permits play()),
+    //     wait for the capture, then restore the video exactly as we found it
+    //     (paused, same position, same mute state) — no real autoplay, no sound.
+    if (!cap && location.hostname === "m.youtube.com") {
+      const v = document.querySelector("video");
+      if (v) {
+        const wasPaused = v.paused, wasMuted = v.muted, pos = v.currentTime;
+        clog("playback trigger", { wasPaused, pos: Math.round(pos) });
+        try { v.muted = true; const p = v.play(); if (p && p.catch) p.catch(() => {}); } catch {}
+        for (let i = 0; i < 25 && !cap; i++) {
+          await sleep(300);
+          cap = await captureFor(videoId).catch(() => null);
+        }
+        try {
+          if (wasPaused) { v.pause(); v.currentTime = pos; } // we started it → undo
+          v.muted = wasMuted;
+        } catch {}
+        if (cap) {
+          const segs = parseCapture(cap);
+          clog("playback capture", { kind: cap.kind, segs: segs ? segs.length : 0 });
+          if (segs) return result(videoId, methodOf(cap), segs, started);
+        }
+      }
+    }
+
     // 3. Caption-toggle trigger: flick CC on so the player fetches its own
     //    caption track (an attested request we capture at the network layer),
     //    then restore the previous CC state. Much subtler than opening the
@@ -249,6 +277,7 @@
 
   async function onSummarizeClick() {
     const panel = openPanel();
+    panel.classList.remove("yapsum-collapsed"); // re-summarizing always expands
     setPanel(panel, "Fetching transcript…");
     let transcript;
     try {
@@ -453,12 +482,20 @@
     panel.className = "yapsum-panel";
     const bar = document.createElement("div");
     bar.className = "yapsum-panel-bar";
-    bar.innerHTML = '<span>yap-sum</span>';
+    // Title is the collapse/expand toggle: tapping it folds the panel to a
+    // compact bar at the bottom (summary + Q&A preserved, so re-opening is
+    // instant — no re-fetch). Only ✕ removes it (then Summarize rebuilds).
+    const title = document.createElement("span");
+    title.className = "yapsum-panel-title";
+    title.textContent = "yap-sum";
+    title.title = "Collapse / expand";
+    title.addEventListener("click", () => panel.classList.toggle("yapsum-collapsed"));
     const close = document.createElement("button");
     close.className = "yapsum-panel-close";
     close.textContent = "✕";
+    close.title = "Close";
     close.addEventListener("click", () => panel.remove());
-    bar.appendChild(close);
+    bar.append(title, close);
     const body = document.createElement("div");
     body.className = "yapsum-panel-body";
     panel.append(bar, body);
