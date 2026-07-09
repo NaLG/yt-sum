@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>yap-sum settings</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main>
+      <h1>yap-sum</h1>
+      <p class="sub">One-click YouTube summaries through your own LLM key. Nothing leaves your browser except the transcript you send to the endpoint you choose.</p>
+
+      <form id="settings">
+        <label>
+          Provider
+          <select id="provider">
+            <option value="openai">OpenAI-compatible (OpenAI, GLM, Gemini, OpenRouter, Groq, Ollama, LM Studio…)</option>
+            <option value="anthropic">Anthropic (Claude)</option>
+          </select>
+        </label>
+
+        <label>
+          API base URL
+          <input id="baseUrl" type="text" spellcheck="false" placeholder="https://api.openai.com/v1" />
+          <small id="baseUrlHint"></small>
+        </label>
+
+        <label>
+          Model
+          <input id="model" type="text" spellcheck="false" placeholder="gpt-4o-mini" />
+        </label>
+
+        <label>
+          API key
+          <input id="apiKey" type="password" spellcheck="false" autocomplete="off" placeholder="sk-…" />
+          <small>Stored locally in this browser (storage.local). Never sent anywhere except your chosen endpoint.</small>
+        </label>
+
+        <label>
+          System prompt (controls tone, length, and style)
+          <textarea id="systemPrompt" rows="6"></textarea>
+        </label>
+
+        <div class="row">
+          <label class="half">
+            Max output tokens
+            <input id="maxTokens" type="number" min="128" step="128" />
+          </label>
+          <label class="half">
+            Max transcript chars (longer is trimmed)
+            <input id="maxTranscriptChars" type="number" min="10000" step="10000" />
+          </label>
+        </div>
+
+        <div class="actions">
+          <button type="button" id="save" class="primary">Save</button>
+          <button type="button" id="reset">Reset to defaults</button>
+          <button type="button" id="test">Test connection</button>
+        </div>
+        <p id="status" class="status" aria-live="polite"></p>
+      </form>
+
+      <details class="presets">
+        <summary>Preset endpoints</summary>
+        <ul>
+          <li><b>OpenAI</b> — <code>https://api.openai.com/v1</code> · <code>gpt-4o-mini</code></li>
+          <li><b>GLM / Z.ai</b> — <code>https://api.z.ai/api/paas/v4</code> · <code>glm-4.7-flash</code> (free tier)</li>
+          <li><b>Gemini</b> — <code>https://generativelanguage.googleapis.com/v1beta/openai</code> · <code>gemini-2.5-flash</code></li>
+          <li><b>OpenRouter</b> — <code>https://openrouter.ai/api/v1</code> · any model</li>
+          <li><b>Groq</b> — <code>https://api.groq.com/openai/v1</code></li>
+          <li><b>Ollama (local)</b> — <code>http://localhost:11434/v1</code> · <code>llama3.2</code></li>
+          <li><b>LM Studio (local)</b> — <code>http://localhost:1234/v1</code></li>
+          <li><b>Anthropic</b> — provider = Anthropic · <code>https://api.anthropic.com/v1</code> · <code>claude-fable-5</code></li>
+        </ul>
+        <p><small>Local endpoints and non-listed hosts need host permission — yap-sum will request it the first time you save such a URL.</small></p>
+      </details>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>

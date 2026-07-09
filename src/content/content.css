@@ -1,0 +1,87 @@
+/* yap-sum injected UI */
+
+.yapsum-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 16px;
+  margin-right: 8px;
+  border: none;
+  border-radius: 18px;
+  background: #0b57d0;
+  color: #fff;
+  font-family: "Roboto", "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.yapsum-btn:hover {
+  background: #0842a0;
+}
+
+.yapsum-panel {
+  position: fixed;
+  top: 72px;
+  right: 16px;
+  width: min(420px, calc(100vw - 32px));
+  max-height: calc(100vh - 100px);
+  display: flex;
+  flex-direction: column;
+  background: var(--yt-spec-base-background, #fff);
+  color: var(--yt-spec-text-primary, #0f0f0f);
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28);
+  z-index: 2147483000;
+  font-family: "Roboto", "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  .yapsum-panel {
+    background: #212121;
+    color: #f1f1f1;
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+}
+
+.yapsum-panel-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  font-weight: 600;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+}
+.yapsum-panel-close {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 16px;
+  cursor: pointer;
+  line-height: 1;
+}
+.yapsum-panel-body {
+  padding: 14px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  line-height: 1.5;
+  font-size: 14px;
+}
+.yapsum-panel-body.yapsum-error {
+  color: #d33;
+  font-family: ui-monospace, monospace;
+  font-size: 13px;
+}
+
+/* Mobile (m.youtube.com): full-width bottom sheet */
+@media (max-width: 640px) {
+  .yapsum-panel {
+    top: auto;
+    bottom: 0;
+    right: 0;
+    left: 0;
+    width: 100%;
+    max-height: 70vh;
+    border-radius: 12px 12px 0 0;
+  }
+}

@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>yap-sum</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        margin: 0;
+        min-width: 240px;
+        padding: 14px;
+        font-family: system-ui, sans-serif;
+        font-size: 14px;
+        background: Canvas;
+        color: CanvasText;
+      }
+      h1 { font-size: 16px; margin: 0 0 10px; }
+      button, a.btn {
+        display: block;
+        width: 100%;
+        margin: 6px 0;
+        padding: 10px;
+        border: none;
+        border-radius: 8px;
+        font: inherit;
+        font-weight: 600;
+        text-align: center;
+        text-decoration: none;
+        cursor: pointer;
+        box-sizing: border-box;
+      }
+      #summarize { background: #0b57d0; color: #fff; }
+      a.btn { background: rgba(128,128,128,0.15); color: CanvasText; }
+      #msg { color: #888; margin: 8px 0 0; min-height: 1.2em; }
+    </style>
+  </head>
+  <body>
+    <h1>yap-sum</h1>
+    <button id="summarize">Summarize this video</button>
+    <a class="btn" id="settings" href="options.html" target="_blank">Settings</a>
+    <p id="msg"></p>
+    <script src="panel.js"></script>
+  </body>
+</html>

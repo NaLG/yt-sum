@@ -1,0 +1,18 @@
+{
+  "name": "yap-sum",
+  "version": "0.1.0",
+  "description": "Firefox extension (desktop + Android) for one-click YouTube AI summaries via your own LLM API key.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "lint": "web-ext lint --source-dir src",
+    "run:desktop": "web-ext run --source-dir src --start-url 'https://www.youtube.com/watch?v=eIho2S0ZahI'",
+    "run:android": "node scripts/run-android.mjs",
+    "build": "web-ext build --source-dir src --artifacts-dir dist --overwrite-dest",
+    "test:extract": "node test/webext-validate.mjs",
+    "test:android": "node test/webext-validate.mjs --target firefox-android"
+  },
+  "devDependencies": {
+    "web-ext": "^8.0.0"
+  }
+}
