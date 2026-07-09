@@ -8,8 +8,12 @@
   margin-right: 8px;
   border: none;
   border-radius: 18px;
-  background: #0b57d0;
-  color: #fff;
+  /* Match YouTube's tonal action chips (like/dislike/share) so it blends in
+     both light and dark. These vars are set by YouTube's OWN theme, so the
+     button tracks the site theme (not the OS setting). Fallbacks cover the
+     rare case where the variable isn't defined on a given A/B variant. */
+  background: var(--yt-spec-badge-chip-background, rgba(0, 0, 0, 0.05));
+  color: var(--yt-spec-text-primary, #0f0f0f);
   font-family: "Roboto", "Segoe UI", system-ui, sans-serif;
   font-size: 14px;
   font-weight: 500;
@@ -17,7 +21,18 @@
   white-space: nowrap;
 }
 .yapsum-btn:hover {
-  background: #0842a0;
+  background: var(--yt-spec-badge-chip-background-hover, rgba(0, 0, 0, 0.1));
+}
+/* Fallback only for variants that expose no YouTube theme vars AND the OS is in
+   dark mode — keeps the pill legible instead of near-invisible dark-on-dark. */
+@media (prefers-color-scheme: dark) {
+  .yapsum-btn {
+    background: var(--yt-spec-badge-chip-background, rgba(255, 255, 255, 0.1));
+    color: var(--yt-spec-text-primary, #f1f1f1);
+  }
+  .yapsum-btn:hover {
+    background: var(--yt-spec-badge-chip-background-hover, rgba(255, 255, 255, 0.2));
+  }
 }
 
 .yapsum-panel {
