@@ -90,6 +90,19 @@ try {
     return { picked: opt.value, model: document.getElementById('model').value };
   `);
   check("picking from dropdown fills model field", afterPick.model === afterPick.picked, `picked="${afterPick.picked}" model="${afterPick.model}"`);
+
+  // API key field is readable by default; the toggle masks/reveals it.
+  const keyState = await ex(sid, `
+    const el = document.getElementById('apiKey');
+    const before = el.type;
+    document.getElementById('toggleKey').click();
+    const after = el.type;
+    document.getElementById('toggleKey').click();
+    return { before, after, restored: el.type, btn: document.getElementById('toggleKey').textContent };
+  `);
+  check("API key visible by default", keyState.before === "text", `type="${keyState.before}"`);
+  check("toggle masks the key", keyState.after === "password");
+  check("toggle restores visibility", keyState.restored === "text");
 } catch (e) {
   console.log("SMOKE ERROR:", e.message);
   failures++;

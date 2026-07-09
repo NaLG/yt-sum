@@ -45,7 +45,10 @@
 
         <label>
           API key
-          <input id="apiKey" type="password" spellcheck="false" autocomplete="off" placeholder="sk-…" />
+          <span class="model-row">
+            <input id="apiKey" type="text" spellcheck="false" autocomplete="off" autocapitalize="off" placeholder="sk-…" />
+            <button type="button" id="toggleKey" title="Show or hide the key">Hide</button>
+          </span>
           <small>Stored locally in this browser (storage.local). Never sent anywhere except your chosen endpoint.</small>
         </label>
 

@@ -1,24 +1,37 @@
-# Testing yap-sum on an Android phone (before AMO signing)
+# Installing yap-sum on an Android phone
 
-**You can run yap-sum on your phone today, no AMO account needed — but only in
-Firefox _Nightly_, not the regular Play-Store Firefox.**
+**Once the `.xpi` is AMO-signed, it installs on regular Play-Store Firefox for
+Android — no Nightly, no about:config.** (Signing: see the bottom section.)
 
-## Why Nightly specifically
+## Installing a signed .xpi — the key point
 
-yap-sum extracts the transcript by watching YouTube's own network requests
-(the `webRequest` API). I tested both Firefox builds on an Android emulator:
+You **cannot install an add-on by "opening" the .xpi file**. Firefox for Android
+has no file-association for that: tapping/opening an .xpi just **downloads** it.
+That's expected — there is no setting to change.
 
-- **Regular Firefox (Play Store):** strips the `webRequest` permission from any
-  add-on you install yourself (sideload). yap-sum loads, but transcript
-  extraction can't work. Dead end until the extension is AMO-signed.
-- **Firefox Nightly:** keeps `webRequest`. I installed the real yap-sum, opened
-  a video, tapped **Summarize**, and it extracted the transcript and ran the
-  whole pipeline — stopping only at "No API key configured" (expected; I hadn't
-  set a key). With your Gemini key it will summarize, exactly like desktop.
-  Screenshot of it working: `docs/mobile-summarize-button.png`.
+Install it from *inside* Firefox instead:
 
-So: **install Firefox Nightly for Android** (Play Store → "Firefox Nightly for
-Developers", or from Mozilla directly). Keep your normal Firefox too.
+1. Get the signed `.xpi` onto the phone (download it in Firefox, or transfer it —
+   it lands in Downloads).
+2. **⋮ menu → Settings → Extensions** (aka Add-ons).
+3. On that screen tap the **⋮ (three-dot) at the top-right → "Install extension
+   from file"**. (Verified present in release Firefox **152**.)
+4. Pick the `.xpi` from Downloads → **Add** → grant the permission prompt.
+   This prompt is where a *signed* install gets `webRequest` — the permission a
+   plain sideload/dev-install doesn't get.
+5. Use it: open a YouTube video → **⋮ → Desktop site** (mobile YouTube exposes no
+   transcript) → tap **Summarize**. Set your provider + API key first via the
+   yap-sum toolbar popup → Settings.
+
+## No-signing alternative: Firefox Nightly
+
+If you ever want to test an *unsigned* build without signing it, only **Firefox
+Nightly** works (regular Firefox strips `webRequest` from unsigned sideloads;
+Nightly keeps it — verified on the emulator: the real yap-sum injected its
+Summarize button on desktop-site YouTube and extracted the transcript, stopping
+only at "No API key". Screenshot: `docs/mobile-summarize-button.png`). On
+Nightly you also need `about:config → xpinstall.signatures.required = false`
+before the install-from-file step above. For a signed build this is unnecessary.
 
 ## One YouTube caveat (same as desktop findings)
 

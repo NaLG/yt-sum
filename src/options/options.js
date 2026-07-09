@@ -255,5 +255,13 @@ $("loadModels").addEventListener("click", () => loadModels(false));
 $("save").addEventListener("click", save);
 $("reset").addEventListener("click", reset);
 $("test").addEventListener("click", testConnection);
+// Key is visible by default so pasting/editing (e.g. trimming stray text off a
+// pasted string) is easy; the toggle masks it for shoulder-surfing / sharing.
+$("toggleKey").addEventListener("click", () => {
+  const el = $("apiKey");
+  const hide = el.type === "text";
+  el.type = hide ? "password" : "text";
+  $("toggleKey").textContent = hide ? "Show" : "Hide";
+});
 renderPresets();
 load();
