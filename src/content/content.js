@@ -94,50 +94,64 @@
   // Primary extraction: let YouTube's player fetch the transcript and capture
   // its JSON response at the network layer (background webRequest filter), which
   // is robust to UI variants. Falls back to the extractor's DOM/network methods.
+  const t0 = () => performance.now();
+  function result(videoId, method, segs, started) {
+    document.documentElement.dataset.yapsumMethod = method;
+    return NS.buildResult(videoId, method, segs, { ms: Math.round(performance.now() - started) }, []);
+  }
+  const captureFor = async (videoId) =>
+    (await browser.runtime.sendMessage({ type: "getCaptured", videoId }))?.json;
+
   async function getTranscript() {
     const videoId = NS.currentVideoId();
-    const started = performance.now();
+    const started = t0();
     flow = [];
     clog("start", { videoId, url: location.href });
-    try {
-      await browser.runtime.sendMessage({ type: "armCapture" });
-      // Maybe the player already fetched it (preloaded, or opened earlier).
-      let cap = (await browser.runtime.sendMessage({ type: "getCaptured", videoId }))?.json;
-      clog("preloaded capture?", { hit: !!cap });
-      if (!cap) {
-        let opened = false, openErr = null;
-        try { opened = await NS.openTranscriptPanel(); } catch (e) { openErr = e.message; }
-        clog("openTranscriptPanel", { opened, openErr });
-        for (let i = 0; i < 40 && !cap; i++) {
-          await sleep(300);
-          cap = (await browser.runtime.sendMessage({ type: "getCaptured", videoId }))?.json;
-        }
-        clog("after open+poll", { hit: !!cap });
-      }
-      if (!cap) {
-        // The transcript may have been fetched before our listener existed
-        // (extension reloaded on an open video). Force a fresh request.
-        let retriggerErr = null;
-        try { await NS.forceTranscriptFetch(); } catch (e) { retriggerErr = e.message; }
-        clog("forceTranscriptFetch", { retriggerErr });
-        for (let i = 0; i < 40 && !cap; i++) {
-          await sleep(300);
-          cap = (await browser.runtime.sendMessage({ type: "getCaptured", videoId }))?.json;
-        }
-        clog("after retrigger+poll", { hit: !!cap });
-      }
-      if (cap) {
-        const segs = NS.parseGetTranscriptJson(cap);
-        clog("parsed capture", { segments: segs ? segs.length : 0 });
-        if (segs) {
-          document.documentElement.dataset.yapsumMethod = "intercept";
-          return NS.buildResult(videoId, "intercept", segs, { ms: Math.round(performance.now() - started) }, []);
-        }
-      }
-    } catch (e) {
-      clog("intercept path threw", { err: String(e) });
+    await browser.runtime.sendMessage({ type: "armCapture" }).catch(() => {});
+
+    // 1. Already captured passively (the player fetched it — user opened the
+    //    transcript earlier, or a prior visit). No panel interaction.
+    let cap = await captureFor(videoId).catch(() => null);
+    clog("passive capture?", { hit: !!cap });
+    if (cap) {
+      const segs = NS.parseGetTranscriptJson(cap);
+      if (segs) return result(videoId, "intercept", segs, started);
     }
-    clog("falling back to extractor methods");
+
+    // 2. Transcript already rendered on the page (you had it open)? Read it
+    //    directly — variant-proof, and scrolls the (virtualized) panel to get
+    //    every row, restoring scroll position after. No network needed.
+    if (NS.scrapeVisibleTranscript()) {
+      const segs = await NS.scrapeTranscriptFull();
+      if (segs) {
+        clog("scraped full transcript", { segments: segs.length });
+        return result(videoId, "scrape", segs, started);
+      }
+    }
+    clog("scrape visible?", { segments: 0 });
+
+    // 3. Last resort: briefly open the transcript so the player fetches it, then
+    //    capture (or scrape) and close the panel again. Only reached when the
+    //    transcript is neither captured nor already visible.
+    let opened = false, openErr = null;
+    try { opened = await NS.openTranscriptPanel(); } catch (e) { openErr = e.message; }
+    clog("last-resort open", { opened, openErr });
+    for (let i = 0; i < 40; i++) {
+      await sleep(300);
+      cap = await captureFor(videoId).catch(() => null);
+      if (cap) {
+        const s = NS.parseGetTranscriptJson(cap);
+        if (s) { NS.closeTranscriptPanel(); clog("captured after open"); return result(videoId, "intercept", s, started); }
+      }
+      if (NS.scrapeVisibleTranscript()) {
+        const s = await NS.scrapeTranscriptFull();
+        if (s) { NS.closeTranscriptPanel(); clog("scraped after open"); return result(videoId, "scrape", s, started); }
+      }
+    }
+    NS.closeTranscriptPanel();
+    clog("last-resort open yielded nothing; trying network fallbacks");
+
+    // 4. Network reconstruction fallbacks (usually 400/PoToken-gated, but cheap).
     const r = await NS.extractTranscript(videoId);
     document.documentElement.dataset.yapsumMethod = r.method;
     clog("fallback result", { method: r.method });
@@ -152,8 +166,22 @@
     const q = (s) => document.querySelectorAll(s).length;
     let btn = document.querySelector('button[aria-label*="transcript" i]');
     if (!btn) btn = Array.from(document.querySelectorAll("button, tp-yt-paper-button, yt-button-shape")).find((x) => /transcript/i.test(x.getAttribute("aria-label") || x.textContent || ""));
+
+    // If scraping missed, dump a sample of elements whose text starts with a
+    // timestamp — that reveals the actual transcript-row markup of this variant.
+    const tsSamples = [];
+    for (const el of document.querySelectorAll("*")) {
+      if (tsSamples.length >= 4) break;
+      const t = (el.textContent || "").trim();
+      if (/^\d{1,2}:\d{2}(?::\d{2})?\s*\S/.test(t) && t.length < 200 && el.querySelectorAll("*").length <= 6) {
+        tsSamples.push({ tag: el.tagName.toLowerCase(), cls: String(el.className).slice(0, 60), html: el.outerHTML.replace(/\s+/g, " ").slice(0, 240) });
+      }
+    }
+    let scrapeCount = 0;
+    try { scrapeCount = (NS.scrapeVisibleTranscript() || []).length; } catch {}
+
     return {
-      yapsum: "debug-v1",
+      yapsum: "debug-v2",
       url: location.href,
       videoId: NS.currentVideoId(),
       error: errorMsg,
@@ -161,9 +189,13 @@
       pageFacts: {
         transcriptButtonFound: !!btn,
         transcriptButtonLabel: btn ? (btn.getAttribute("aria-label") || btn.textContent || "").trim().slice(0, 40) : null,
+        genericScrapeRows: scrapeCount,
+        transcriptPanelFound: !!NS.transcriptPanelInfo?.(),
+        transcriptPanelInfo: NS.transcriptPanelInfo?.() || null,
         segNodes: q("ytd-transcript-segment-renderer"),
-        segListNodes: q("ytd-transcript-segment-list-renderer"),
         engagementPanels: q("ytd-engagement-panel-section-list-renderer"),
+        engagementPanelTargets: Array.from(document.querySelectorAll("ytd-engagement-panel-section-list-renderer"), (p) => p.getAttribute("target-id")).filter(Boolean),
+        timestampRowSamples: tsSamples,
       },
       content: flow,
       background: bg,
@@ -181,11 +213,84 @@
       return;
     }
     setPanel(panel, `Transcript ready (${transcript.segments.length} lines). Summarizing…`);
+    const body = panel.querySelector(".yapsum-panel-body");
     try {
-      const summary = await requestSummary(transcript, (chunk) => appendPanel(panel, chunk));
-      if (summary != null) setPanel(panel, summary);
+      let acc = "";
+      let lastRender = 0;
+      const summary = await requestSummary(transcript, (chunk) => {
+        acc += chunk;
+        const now = Date.now();
+        if (now - lastRender > 80) { lastRender = now; renderMarkdown(acc, body); } // live, throttled
+      });
+      renderMarkdown(summary != null ? summary : acc, body); // final clean render
     } catch (e) {
       setPanel(panel, `Summary failed:\n\n${e.message}`, true);
+    }
+  }
+
+  // ---- safe markdown rendering ----------------------------------------------
+  // The summary is model output injected into YouTube's page, so we NEVER use
+  // innerHTML with it. Every node is built with textContent (and hrefs are
+  // scheme-checked), making injection impossible while still formatting.
+
+  function cleanSummary(t) {
+    return String(t)
+      .replace(/<\|[^|>]*\|>/g, "")            // <|end_of_turn|>-style special tokens
+      .replace(/<_[^>]*_>/g, "")               // <_ ... _> markers
+      .replace(/\b(?:end_?of_?turn|ofturn)_?\b/gi, "")
+      .replace(/[ \t]+\n/g, "\n")
+      .trim();
+  }
+
+  function renderInline(text, parent) {
+    const re = /(\*\*([^*]+)\*\*|__([^_]+)__|\*([^*\n]+)\*|`([^`]+)`|\[([^\]]+)\]\(([^)\s]+)\))/g;
+    let last = 0, m;
+    while ((m = re.exec(text))) {
+      if (m.index > last) parent.appendChild(document.createTextNode(text.slice(last, m.index)));
+      if (m[2] || m[3]) { const el = document.createElement("strong"); el.textContent = m[2] || m[3]; parent.appendChild(el); }
+      else if (m[4]) { const el = document.createElement("em"); el.textContent = m[4]; parent.appendChild(el); }
+      else if (m[5]) { const el = document.createElement("code"); el.textContent = m[5]; parent.appendChild(el); }
+      else if (m[6] && m[7]) {
+        if (/^https?:\/\//i.test(m[7])) {
+          const a = document.createElement("a");
+          a.href = m[7]; a.textContent = m[6]; a.target = "_blank"; a.rel = "noopener noreferrer";
+          parent.appendChild(a);
+        } else {
+          parent.appendChild(document.createTextNode(m[0])); // unsafe scheme -> literal
+        }
+      }
+      last = re.lastIndex;
+    }
+    if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
+  }
+
+  function renderMarkdown(md, container) {
+    container.classList.remove("yapsum-error");
+    delete container.dataset.streaming;
+    container.textContent = "";
+    const lines = cleanSummary(md).split("\n");
+    let list = null, listTag = null;
+    const endList = () => { list = null; listTag = null; };
+    for (const raw of lines) {
+      const line = raw;
+      let m;
+      if ((m = line.match(/^(#{1,6})\s+(.*)$/))) {
+        endList();
+        const el = document.createElement("h" + Math.min(Math.max(m[1].length + 1, 3), 6)); // #→h3, ##→h3, ###→h4
+        renderInline(m[2], el);
+        container.appendChild(el);
+      } else if ((m = line.match(/^\s*[-*+]\s+(.*)$/))) {
+        if (listTag !== "ul") { list = document.createElement("ul"); container.appendChild(list); listTag = "ul"; }
+        const li = document.createElement("li"); renderInline(m[1], li); list.appendChild(li);
+      } else if ((m = line.match(/^\s*\d+[.)]\s+(.*)$/))) {
+        if (listTag !== "ol") { list = document.createElement("ol"); container.appendChild(list); listTag = "ol"; }
+        const li = document.createElement("li"); renderInline(m[1], li); list.appendChild(li);
+      } else if (line.trim() === "") {
+        endList();
+      } else {
+        endList();
+        const p = document.createElement("p"); renderInline(line, p); container.appendChild(p);
+      }
     }
   }
 

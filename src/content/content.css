@@ -61,12 +61,41 @@
   line-height: 1;
 }
 .yapsum-panel-body {
-  padding: 14px;
+  padding: 14px 16px;
   overflow-y: auto;
   white-space: pre-wrap;
   line-height: 1.5;
   font-size: 14px;
 }
+
+/* Rendered markdown summary */
+.yapsum-panel-body h3,
+.yapsum-panel-body h4,
+.yapsum-panel-body h5,
+.yapsum-panel-body h6 {
+  margin: 14px 0 6px;
+  line-height: 1.3;
+  font-weight: 600;
+}
+.yapsum-panel-body h3 { font-size: 16px; }
+.yapsum-panel-body h4 { font-size: 15px; }
+.yapsum-panel-body h5,
+.yapsum-panel-body h6 { font-size: 14px; }
+.yapsum-panel-body p { margin: 0 0 10px; }
+.yapsum-panel-body ul,
+.yapsum-panel-body ol { margin: 0 0 10px; padding-left: 22px; }
+.yapsum-panel-body li { margin: 3px 0; }
+.yapsum-panel-body strong { font-weight: 600; }
+.yapsum-panel-body code {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.9em;
+  background: rgba(128, 128, 128, 0.18);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.yapsum-panel-body a { color: #3b82f6; text-decoration: underline; }
+.yapsum-panel-body > *:first-child { margin-top: 0; }
+.yapsum-panel-body > *:last-child { margin-bottom: 0; }
 .yapsum-panel-body.yapsum-error {
   color: #d33;
   font-family: ui-monospace, monospace;

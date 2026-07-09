@@ -84,17 +84,146 @@
     return b;
   }
 
-  function readPanelSegments() {
-    const nodes = document.querySelectorAll("ytd-transcript-segment-renderer, .ytm-transcript-segment-renderer");
-    const segs = [];
-    for (const n of nodes) {
-      const textEl = n.querySelector(".segment-text, yt-formatted-string.segment-text");
-      const stampEl = n.querySelector(".segment-timestamp, .segment-start-offset");
-      const text = (textEl?.textContent || "").trim();
-      if (!text) continue;
-      segs.push({ startMs: stampToMs(stampEl?.textContent), text });
+  const TS_RE = /^\d{1,2}:\d{2}(?::\d{2})?$/;
+
+  // Generic, variant-proof transcript scrape. YouTube ships several different
+  // transcript-panel markups across A/B experiments, so instead of matching
+  // specific tag/class names we key on STRUCTURE: a transcript row is any
+  // element that directly contains a timestamp-only child, followed by text.
+  // We then keep the largest group of such rows sharing one parent (the
+  // transcript list). Reads whatever is already rendered — no panel toggling.
+  // Find the transcript engagement panel specifically, so we never mistake
+  // related-video durations or chapter markers for transcript rows.
+  function transcriptPanel() {
+    const byTarget = document.querySelector(
+      'ytd-engagement-panel-section-list-renderer[target-id*="transcript" i], [target-id*="transcript" i]'
+    );
+    if (byTarget) return byTarget;
+    for (const panel of document.querySelectorAll("ytd-engagement-panel-section-list-renderer")) {
+      const title = panel.querySelector('#title-text, [id*="title" i], [class*="title" i], h1, h2, yt-formatted-string');
+      if (title && /^\s*transcript\s*$/i.test((title.textContent || "").trim())) return panel;
     }
-    return segs;
+    return (
+      document.querySelector('ytd-transcript-renderer, ytd-transcript-segment-list-renderer') ||
+      document.querySelector('[class*="transcript" i][class*="content" i], [class*="transcript" i][class*="body" i]') ||
+      null
+    );
+  }
+
+  // Read whatever transcript rows are currently rendered inside the transcript
+  // panel. Variant-proof: keys on structure (timestamp + text rows) rather than
+  // tag/class names. Returns { segs, list, panel } or null. Returns null if the
+  // transcript panel isn't present/open — we do NOT scrape stray timestamps
+  // elsewhere on the page.
+  function detectTranscript() {
+    const panel = transcriptPanel();
+    if (!panel) return null;
+    const tsEls = [];
+    for (const el of panel.querySelectorAll("*")) {
+      if (el.children.length === 0 && TS_RE.test((el.textContent || "").trim())) tsEls.push(el);
+    }
+    if (tsEls.length < 3) return null;
+
+    // The list is the container with the most timestamp-bearing ROW children.
+    // Rows sit in their own wrappers, so grouping by immediate parent fails —
+    // walk up and credit each ancestor for the distinct child leading to a ts.
+    const childRows = new Map();
+    for (const ts of tsEls) {
+      let node = ts, depth = 0;
+      while (node.parentElement && depth++ < 15) {
+        const parent = node.parentElement;
+        let set = childRows.get(parent);
+        if (!set) { set = new Set(); childRows.set(parent, set); }
+        set.add(node);
+        node = parent;
+      }
+    }
+    let list = null, max = 0;
+    for (const [el, set] of childRows) if (set.size > max) { max = set.size; list = el; }
+    if (max < 3) return null;
+
+    const segs = [];
+    for (const row of childRows.get(list)) {
+      const full = (row.textContent || "").replace(/\s+/g, " ").trim();
+      const m = full.match(/(\d{1,2}:\d{2}(?::\d{2})?)/);
+      if (!m) continue;
+      const ts = m[1];
+      let text = full.slice(full.indexOf(ts) + ts.length).trim();
+      if (!text) text = full.slice(0, m.index).trim();
+      if (text && text.length <= 600) segs.push({ startMs: stampToMs(ts), text });
+    }
+    if (segs.length < 3) return null;
+    return { segs, list, panel };
+  }
+
+  function scrapeSegments() {
+    const d = detectTranscript();
+    return d ? d.segs : [];
+  }
+
+  // Debug helper: report whether/how the transcript panel was located.
+  NS.transcriptPanelInfo = function transcriptPanelInfo() {
+    const p = transcriptPanel();
+    if (!p) return null;
+    return {
+      tag: p.tagName.toLowerCase(),
+      targetId: p.getAttribute("target-id"),
+      cls: String(p.className).slice(0, 60),
+      rows: (detectTranscript()?.segs || []).length,
+    };
+  };
+
+  function findScroller(el) {
+    let node = el;
+    for (let i = 0; i < 10 && node; i++) {
+      const s = getComputedStyle(node);
+      if ((s.overflowY === "auto" || s.overflowY === "scroll") && node.scrollHeight > node.clientHeight + 20) return node;
+      node = node.parentElement;
+    }
+    return null;
+  }
+
+  // Sync: read only the currently-rendered rows (fast; may be partial if the
+  // panel is virtualized).
+  NS.scrapeVisibleTranscript = function scrapeVisibleTranscript() {
+    const segs = scrapeSegments();
+    return segs.length ? segs : null;
+  };
+
+  // Async: get the FULL transcript from a (possibly virtualized) panel by
+  // scrolling through it and accumulating unique rows, then restoring the
+  // scroll position. Used as the fallback when the network intercept isn't
+  // available.
+  NS.scrapeTranscriptFull = async function scrapeTranscriptFull() {
+    const d = detectTranscript();
+    if (!d) return null;
+    const collected = new Map();
+    const add = (arr) => { for (const s of arr) if (!collected.has(s.startMs)) collected.set(s.startMs, s.text); };
+    add(d.segs);
+
+    const scroller = findScroller(d.list);
+    if (scroller) {
+      const saved = scroller.scrollTop;
+      scroller.scrollTop = 0;
+      await sleep(100);
+      let noNew = 0;
+      for (let i = 0; i < 400 && noNew < 3; i++) {
+        const before = collected.size;
+        add(scrapeSegments());
+        const atBottom = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 4;
+        if (collected.size === before) { if (atBottom) noNew++; } else noNew = 0;
+        scroller.scrollTop += Math.max(scroller.clientHeight * 0.8, 150);
+        await sleep(60);
+      }
+      scroller.scrollTop = saved; // restore to minimize visual disruption
+    }
+
+    const out = [...collected.entries()].map(([startMs, text]) => ({ startMs, text })).sort((a, b) => a.startMs - b.startMs);
+    return out.length ? out : null;
+  };
+
+  function readPanelSegments() {
+    return scrapeSegments();
   }
 
   // Trigger YouTube's own transcript panel (which makes the player fire its
@@ -114,19 +243,11 @@
     return true;
   };
 
-  // Force the player to make a FRESH get_transcript request by toggling the
-  // transcript control off and on. Needed when the transcript was already
-  // fetched before our network listener existed (e.g. the extension was
-  // reloaded on an open video), so nothing was captured and the panel is
-  // already open (re-opening alone fires no new request).
-  NS.forceTranscriptFetch = async function forceTranscriptFetch() {
+  // Close the transcript panel we opened (used to clean up after a last-resort
+  // open, so we don't leave visual noise the user didn't ask for).
+  NS.closeTranscriptPanel = function closeTranscriptPanel() {
     const btn = findTranscriptButton();
-    if (!btn) throw new Error("no transcript control to retrigger");
-    btn.scrollIntoView();
-    btn.click(); // toggle (closes if open)
-    await sleep(800);
-    btn.click(); // toggle back open -> fresh get_transcript
-    return true;
+    if (btn) btn.click(); // toggles the panel closed
   };
 
   async function viaPanelScrape() {

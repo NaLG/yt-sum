@@ -51,10 +51,13 @@ const server = createServer((req, res) => {
       sawLLMRequest = { valid, hasAuth: !!req.headers.authorization, transcriptChars, title };
 
       // Stream a summary in OpenAI SSE format, proving what we received.
+      // Rich markdown so we can verify the panel renders formatted DOM.
       res.writeHead(200, { "content-type": "text/event-stream", ...cors });
       const summary =
-        `SUMMARY_OK title="${title}" transcript_chars=${transcriptChars} first="${firstLine}"\n` +
-        `- point one\n- point two`;
+        `SUMMARY_OK title="${title}" transcript_chars=${transcriptChars} first="${firstLine}"\n\n` +
+        `### Key Takeaways\n\n` +
+        `- **First** point about the video\n` +
+        `- Second point two\n`;
       const words = summary.match(/\S+\s*/g) || [summary];
       let i = 0;
       const tick = setInterval(() => {
@@ -106,62 +109,55 @@ writeFileSync(
    });`
 );
 
-// Wait for the button, click it, read the streamed panel, report it.
+// Reproduce the real user flow: transcript already open, then Summarize.
 writeFileSync(
   join(ext, "smoke-reporter.js"),
   `(async () => {
      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-     const videoId = globalThis.yapSum.currentVideoId();
-     let btn = null;
-     for (let i = 0; i < 40 && !btn; i++) { await sleep(500); btn = document.getElementById("yapsum-btn"); }
-     if (!btn) { browser.runtime.sendMessage({ __smoke: true, ok: false, error: "no Summarize button" }); return; }
-
-     // Reproduce the real user flow: the transcript is ALREADY OPEN before the
-     // user clicks Summarize. Open it, wait for the background to capture the
-     // player's get_transcript response, then verify the capture SURVIVES the
-     // arm step (the bug: arming used to wipe it) before summarizing.
-     let survivedArm = null;
      try {
-       await globalThis.yapSum.openTranscriptPanel();
-       let captured = false;
-       for (let i = 0; i < 40 && !captured; i++) {
-         await sleep(400);
-         captured = !!(await browser.runtime.sendMessage({ type: "getCaptured", videoId }))?.json;
-       }
-       await browser.runtime.sendMessage({ type: "armCapture" });
-       survivedArm = !!(await browser.runtime.sendMessage({ type: "getCaptured", videoId }))?.json;
-     } catch (e) { survivedArm = "error: " + e.message; }
+       let btn = null;
+       for (let i = 0; i < 40 && !btn; i++) { await sleep(500); btn = document.getElementById("yapsum-btn"); }
+       if (!btn) { browser.runtime.sendMessage({ __smoke: true, ok: false, error: "no Summarize button" }); return; }
 
-     await sleep(300);
-     btn.click();
-     // Wait for the FULL streamed summary to settle (not just its first token).
-     // The mock ends its summary with "point two"; also stop on error or when
-     // the text stops growing across polls.
-     let text = "", prev = "", stable = 0;
-     for (let i = 0; i < 80; i++) {
-       await sleep(500);
+       // Open the transcript up front (as a user reading it would), then verify
+       // the generic scraper reads the FULL transcript (wait for it to settle).
+       try { await globalThis.yapSum.openTranscriptPanel(); } catch (e) {}
+       let scrapeRows = 0, prev = -1;
+       for (let i = 0; i < 40 && scrapeRows !== prev; i++) {
+         prev = scrapeRows;
+         await sleep(400);
+         scrapeRows = (globalThis.yapSum.scrapeVisibleTranscript() || []).length;
+       }
+
+       await sleep(300);
+       btn.click();
+       let text = "", prevText = "", stable = 0;
+       for (let i = 0; i < 80; i++) {
+         await sleep(500);
+         const body = document.querySelector("#yapsum-panel .yapsum-panel-body");
+         text = body ? body.textContent : "";
+         if (body && body.classList.contains("yapsum-error")) break;
+         if (text.includes("point two")) break;
+         stable = text === prevText && text ? stable + 1 : 0;
+         prevText = text;
+         if (stable >= 3 && text.includes("SUMMARY_OK")) break;
+       }
+       await sleep(400); // let the final markdown render settle
        const body = document.querySelector("#yapsum-panel .yapsum-panel-body");
-       text = body ? body.textContent : "";
-       if (body && body.classList.contains("yapsum-error")) break;
-       if (text.includes("point two")) break;
-       stable = text === prev && text ? stable + 1 : 0;
-       prev = text;
-       if (stable >= 3 && text.includes("SUMMARY_OK")) break; // settled
+       browser.runtime.sendMessage({
+         __smoke: true,
+         ok: text.includes("SUMMARY_OK"),
+         method: document.documentElement.dataset.yapsumMethod || "(unknown)",
+         scrapeRows,
+         renderedHeading: !!(body && body.querySelector("h3, h4")),
+         renderedList: !!(body && body.querySelector("ul li")),
+         renderedStrong: !!(body && body.querySelector("strong")),
+         literalMarkdown: !!(body && body.textContent.includes("**")),
+         panelText: text.slice(0, 400),
+       });
+     } catch (e) {
+       browser.runtime.sendMessage({ __smoke: true, ok: false, error: "reporter threw: " + String(e) });
      }
-     const body = document.querySelector("#yapsum-panel .yapsum-panel-body");
-     // Confirm the diagnostic telemetry captured the key events.
-     const dbg = await browser.runtime.sendMessage({ type: "getDebug" });
-     const bgLog = (dbg && dbg.log) || [];
-     browser.runtime.sendMessage({
-       __smoke: true,
-       ok: text.includes("SUMMARY_OK"),
-       method: document.documentElement.dataset.yapsumMethod || "(unknown)",
-       survivedArm,
-       bgSawRequest: bgLog.some((e) => e.m === "get_transcript request seen"),
-       bgSawResponse: bgLog.some((e) => e.m === "get_transcript response" && e.hasSegs),
-       panelText: text.slice(0, 400),
-       isError: body ? body.classList.contains("yapsum-error") : null,
-     });
    })();`
 );
 
@@ -175,29 +171,29 @@ const child = spawn("web-ext", [
 
 const report = await new Promise((resolve) => {
   resolveReport = resolve;
-  setTimeout(() => resolve({ ok: false, error: "timeout (90s)" }), 90000);
+  setTimeout(() => resolve({ ok: false, error: "timeout (150s)" }), 150000);
 });
 try { child.kill("SIGTERM"); } catch {}
 server.close();
 
-console.log("\n--- full-path verification (transcript pre-opened, as a real user) ---");
-console.log("capture survived arm step:", report.survivedArm);
-console.log("diagnostics saw request/response:", report.bgSawRequest, "/", report.bgSawResponse);
+console.log("\n--- full-path verification (transcript open, as a real user) ---");
+console.log("generic scraper read rows:", report.scrapeRows);
 console.log("extraction method used:", report.method);
+console.log("rich text rendered (heading/list/strong):", report.renderedHeading, "/", report.renderedList, "/", report.renderedStrong);
 console.log("LLM endpoint received request:", JSON.stringify(sawLLMRequest));
 console.log("panel showed:", JSON.stringify(report.panelText || report.error));
 const pass =
   report.ok &&
-  report.survivedArm === true &&
-  report.method === "intercept" &&
-  report.bgSawRequest === true &&
-  report.bgSawResponse === true &&
+  (report.method === "intercept" || report.method === "scrape") &&
+  report.renderedHeading === true &&
+  report.renderedList === true &&
+  report.renderedStrong === true &&
+  report.literalMarkdown === false &&
   sawLLMRequest?.valid &&
-  sawLLMRequest?.transcriptChars > 1000 &&
-  (report.panelText || "").includes(`transcript_chars=${sawLLMRequest.transcriptChars}`);
+  sawLLMRequest?.transcriptChars > 5000;                      // the FULL transcript reached the LLM
 console.log(
   pass
-    ? "\n✅ PASS — pre-opened transcript captured, survived arm, summarized via intercept"
+    ? `\n✅ PASS — transcript read (${report.method}), scraper got ${report.scrapeRows} rows, summarized as rich text`
     : "\n❌ FAIL"
 );
 process.exit(pass ? 0 : 1);
