@@ -31,10 +31,10 @@
     if (s == null) return s;
     try { return JSON.parse(`"${s}"`); } catch { return s; }
   }
-  function extractJsonObject(text, anchor) {
+  function extractBalanced(text, anchor, open, close) {
     const idx = text.indexOf(anchor);
     if (idx === -1) return null;
-    const start = text.indexOf("{", idx + anchor.length);
+    const start = text.indexOf(open, idx + anchor.length);
     if (start === -1) return null;
     let depth = 0, inStr = false, esc = false;
     for (let i = start; i < text.length; i++) {
@@ -43,12 +43,14 @@
       else if (c === "\\") esc = true;
       else if (c === '"') inStr = !inStr;
       else if (!inStr) {
-        if (c === "{") depth++;
-        else if (c === "}") { depth--; if (depth === 0) { try { return JSON.parse(text.slice(start, i + 1)); } catch { return null; } } }
+        if (c === open) depth++;
+        else if (c === close) { depth--; if (depth === 0) { try { return JSON.parse(text.slice(start, i + 1)); } catch { return null; } } }
       }
     }
     return null;
   }
+  const extractJsonObject = (text, anchor) => extractBalanced(text, anchor, "{", "}");
+  const extractJsonArray = (text, anchor) => extractBalanced(text, anchor, "[", "]");
   function collectSegments(node, out = []) {
     if (Array.isArray(node)) for (const item of node) collectSegments(item, out);
     else if (node && typeof node === "object") {
@@ -74,12 +76,22 @@
 
   // ---- method 1: DOM transcript-panel scrape (primary) ----------------------
 
+  // The transcript control varies by A/B variant and viewport: <button>,
+  // yt-button-shape, [role=button], sometimes an <a>. aria-label match first
+  // (most precise), then short visible text ("Transcript" / "Show transcript") —
+  // the length guard keeps comment links etc. from matching.
+  const BUTTONISH = "button, tp-yt-paper-button, yt-button-shape, ytd-button-renderer, [role=button], a";
   function findTranscriptButton() {
-    let b = document.querySelector('button[aria-label*="transcript" i]');
+    let b = document.querySelector('button[aria-label*="transcript" i], [role=button][aria-label*="transcript" i]');
     if (!b) {
-      b = Array.from(document.querySelectorAll("button, tp-yt-paper-button, yt-button-shape")).find((x) =>
-        /show transcript|transcript/i.test(x.getAttribute("aria-label") || x.textContent || "")
-      );
+      const all = Array.from(document.querySelectorAll(BUTTONISH));
+      b = all.find((x) => /transcript/i.test(x.getAttribute("aria-label") || ""));
+      if (!b) {
+        b = all.find((x) => {
+          const t = (x.textContent || "").trim();
+          return t.length <= 40 && /transcript/i.test(t);
+        });
+      }
     }
     return b;
   }
@@ -94,20 +106,25 @@
   // transcript list). Reads whatever is already rendered — no panel toggling.
   // Find the transcript engagement panel specifically, so we never mistake
   // related-video durations or chapter markers for transcript rows.
-  function transcriptPanel() {
-    const byTarget = document.querySelector(
+  // Several transcript-ish containers can coexist (e.g. an empty
+  // "PAmodern_transcript_view" stub next to the populated panel), so return
+  // ALL candidates — detectTranscript picks the one that actually has rows.
+  function transcriptPanelCandidates() {
+    const seen = new Set();
+    const out = [];
+    const add = (el) => { if (el && !seen.has(el)) { seen.add(el); out.push(el); } };
+    for (const el of document.querySelectorAll(
       'ytd-engagement-panel-section-list-renderer[target-id*="transcript" i], [target-id*="transcript" i]'
-    );
-    if (byTarget) return byTarget;
+    )) add(el);
     for (const panel of document.querySelectorAll("ytd-engagement-panel-section-list-renderer")) {
       const title = panel.querySelector('#title-text, [id*="title" i], [class*="title" i], h1, h2, yt-formatted-string');
-      if (title && /^\s*transcript\s*$/i.test((title.textContent || "").trim())) return panel;
+      if (title && /^\s*transcript\s*$/i.test((title.textContent || "").trim())) add(panel);
     }
-    return (
-      document.querySelector('ytd-transcript-renderer, ytd-transcript-segment-list-renderer') ||
-      document.querySelector('[class*="transcript" i][class*="content" i], [class*="transcript" i][class*="body" i]') ||
-      null
-    );
+    for (const el of document.querySelectorAll("ytd-transcript-renderer, ytd-transcript-segment-list-renderer")) add(el);
+    for (const el of document.querySelectorAll(
+      '[class*="transcript" i][class*="content" i], [class*="transcript" i][class*="body" i]'
+    )) add(el);
+    return out;
   }
 
   // Read whatever transcript rows are currently rendered inside the transcript
@@ -116,8 +133,15 @@
   // transcript panel isn't present/open — we do NOT scrape stray timestamps
   // elsewhere on the page.
   function detectTranscript() {
-    const panel = transcriptPanel();
-    if (!panel) return null;
+    let best = null;
+    for (const panel of transcriptPanelCandidates()) {
+      const d = detectTranscriptIn(panel);
+      if (d && (!best || d.segs.length > best.segs.length)) best = d;
+    }
+    return best;
+  }
+
+  function detectTranscriptIn(panel) {
     const tsEls = [];
     for (const el of panel.querySelectorAll("*")) {
       if (el.children.length === 0 && TS_RE.test((el.textContent || "").trim())) tsEls.push(el);
@@ -161,15 +185,20 @@
     return d ? d.segs : [];
   }
 
+  NS.findTranscriptButton = findTranscriptButton; // used by the debug bundle
+
   // Debug helper: report whether/how the transcript panel was located.
   NS.transcriptPanelInfo = function transcriptPanelInfo() {
-    const p = transcriptPanel();
-    if (!p) return null;
+    const candidates = transcriptPanelCandidates();
+    if (!candidates.length) return null;
+    const d = detectTranscript();
+    const p = (d && candidates.find((c) => c.contains(d.list))) || candidates[0];
     return {
       tag: p.tagName.toLowerCase(),
       targetId: p.getAttribute("target-id"),
       cls: String(p.className).slice(0, 60),
-      rows: (detectTranscript()?.segs || []).length,
+      rows: d ? d.segs.length : 0,
+      candidates: candidates.length,
     };
   };
 
@@ -232,11 +261,23 @@
   // panel is already open.
   NS.openTranscriptPanel = async function openTranscriptPanel() {
     if (readPanelSegments().length) return true; // already open
-    const expand = document.querySelector(
-      "#description #expand, #expand, ytd-text-inline-expander #expand, tp-yt-paper-button#expand"
-    );
-    if (expand) { expand.click(); await sleep(600); }
-    const btn = findTranscriptButton();
+    let btn = findTranscriptButton();
+    if (!btn) {
+      // The control usually lives in the EXPANDED description. Known #expand ids
+      // first, then any button-ish "…more"/"Show more" (never "More options").
+      const expand =
+        document.querySelector("#description #expand, #expand, ytd-text-inline-expander #expand, tp-yt-paper-button#expand") ||
+        Array.from(document.querySelectorAll("button, [role=button]")).find((el) => {
+          const label = ((el.getAttribute("aria-label") || "") + " " + (el.textContent || "")).trim().slice(0, 60);
+          return /show more|…more|\.\.\.more|^more$|expand/i.test(label) && !/options|less/i.test(label);
+        });
+      if (expand) expand.click();
+      // The button can render a beat after expansion (SPA), so poll for it.
+      for (let i = 0; i < 10 && !btn; i++) {
+        await sleep(400);
+        btn = findTranscriptButton();
+      }
+    }
     if (!btn) throw new Error("no Show transcript control found");
     btn.scrollIntoView();
     btn.click();
@@ -269,25 +310,37 @@
   // ---- method 2: InnerTube get_transcript (fast path, often gated) ----------
 
   function bootstrapFromText(text) {
-    let captionTracks = null;
-    const ctRaw = rx(text, /"captionTracks":(\[.+?\}\])/s);
-    if (ctRaw) { try { captionTracks = JSON.parse(ctRaw); } catch { captionTracks = null; } }
     return {
       apiKey: rx(text, /"INNERTUBE_API_KEY":"([^"]+)"/),
       clientVersion: rx(text, /"INNERTUBE_CLIENT_VERSION":"([^"]+)"/),
       context: extractJsonObject(text, '"INNERTUBE_CONTEXT":'),
       params: jsonUnescape(rx(text, /"getTranscriptEndpoint":\s*\{"params":"([^"]+)"/)),
-      captionTracks,
+      // Balanced parse — a lazy /\[.+?\}\]/ regex truncates when a track's
+      // name uses runs (nested "}]"), as the mobile player response does.
+      captionTracks: extractJsonArray(text, '"captionTracks":'),
     };
   }
   function pageText() {
     return Array.from(document.scripts, (s) => s.text || "").join("\n") + document.documentElement.innerHTML;
   }
   async function getBootstrap(videoId) {
-    let boot = bootstrapFromText(pageText());
-    if (boot.apiKey && boot.params) return boot;
-    const res = await fetch(`${location.origin}/watch?v=${videoId}`, { credentials: "include" });
-    return bootstrapFromText(await res.text());
+    const domBoot = bootstrapFromText(pageText());
+    if (domBoot.apiKey && domBoot.params) return domBoot;
+    let fetched = null;
+    try {
+      const res = await fetch(`${location.origin}/watch?v=${videoId}`, { credentials: "include" });
+      fetched = bootstrapFromText(await res.text());
+    } catch { /* offline/refused — the DOM bootstrap is all we have */ }
+    if (!fetched) return domBoot;
+    // Per-field merge: the refetched page (m.youtube.com especially) can be a
+    // JS shell MISSING fields the live DOM already has — never erase those.
+    return {
+      apiKey: fetched.apiKey || domBoot.apiKey,
+      clientVersion: fetched.clientVersion || domBoot.clientVersion,
+      context: fetched.context || domBoot.context,
+      params: fetched.params || domBoot.params,
+      captionTracks: fetched.captionTracks || domBoot.captionTracks,
+    };
   }
   async function viaGetTranscript(videoId) {
     const boot = await getBootstrap(videoId);
@@ -312,20 +365,42 @@
 
   // ---- method 3: legacy timedtext -------------------------------------------
 
+  // Parse a caption-track body (the player fetches these when CC turns on).
+  // json3 ({events:[{tStartMs,segs:[{utf8}]}]}) or srv XML (<text start dur>).
+  NS.parseTimedtextBody = function parseTimedtextBody(text) {
+    if (!text || !text.trim()) return null;
+    try {
+      const events = JSON.parse(text).events || [];
+      const segments = events
+        .filter((e) => e.segs)
+        .map((e) => ({ startMs: Number(e.tStartMs || 0), text: e.segs.map((s) => s.utf8 || "").join("").replace(/\n/g, " ") }))
+        .filter((s) => s.text.trim());
+      return segments.length ? segments : null;
+    } catch { /* not JSON — try XML */ }
+    try {
+      const doc = new DOMParser().parseFromString(text, "text/xml");
+      const segments = Array.from(doc.querySelectorAll("text"))
+        .map((n) => ({ startMs: Math.round(parseFloat(n.getAttribute("start") || "0") * 1000), text: (n.textContent || "").trim() }))
+        .filter((s) => s.text);
+      return segments.length ? segments : null;
+    } catch {
+      return null;
+    }
+  };
+
   async function viaTimedtext(videoId) {
     const boot = await getBootstrap(videoId);
     const tracks = boot.captionTracks;
     if (!tracks?.length) throw new Error("no captionTracks");
     const track = tracks.find((t) => (t.languageCode || "").startsWith("en")) || tracks[0];
-    const res = await fetch(jsonUnescape(track.baseUrl) + "&fmt=json3", { credentials: "include" });
+    const raw = jsonUnescape(track.baseUrl);
+    const url = /^https?:/i.test(raw) ? raw : location.origin + raw; // mobile baseUrl is relative
+    const res = await fetch(url + (url.includes("?") ? "&" : "?") + "fmt=json3", { credentials: "include" });
     const text = await res.text();
     if (!res.ok) throw new Error(`timedtext HTTP ${res.status}`);
     if (!text) throw new Error("timedtext EMPTY 200 (PoToken-gated)");
-    const segments = (JSON.parse(text).events || [])
-      .filter((e) => e.segs)
-      .map((e) => ({ startMs: Number(e.tStartMs || 0), text: e.segs.map((s) => s.utf8 || "").join("") }))
-      .filter((s) => s.text.trim());
-    if (!segments.length) throw new Error("timedtext had no text events");
+    const segments = NS.parseTimedtextBody(text);
+    if (!segments) throw new Error("timedtext had no text events");
     return { method: "timedtext", segments };
   }
 

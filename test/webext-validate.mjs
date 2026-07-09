@@ -22,6 +22,7 @@ import { createServer } from "node:http";
 
 const EXTRACTOR = new URL("../src/content/extractor.js", import.meta.url).pathname;
 const FIREFOX = "/Applications/Firefox.app/Contents/MacOS/firefox";
+const FIREFOX_APK = process.env.YAPSUM_FIREFOX_APK || "org.mozilla.firefox";
 const DEBUG = process.env.YAPSUM_DEBUG === "1";
 
 // --target firefox-android runs the SAME test on a USB-connected phone.
@@ -30,8 +31,12 @@ const DEBUG = process.env.YAPSUM_DEBUG === "1";
 const rawArgs = process.argv.slice(2);
 const ti = rawArgs.indexOf("--target");
 const ANDROID = ti !== -1 && rawArgs[ti + 1] === "firefox-android";
-const targets = rawArgs.filter((a, i) => a !== "--target" && i !== ti + 1);
+const targets = rawArgs.filter((a, i) => a !== "--target" && (ti === -1 || i !== ti + 1));
 const videoIds = targets.length ? targets : ["eIho2S0ZahI", "-FOCpMAww28"];
+// YAPSUM_DESKTOP_UA=1: test ext rewrites the UA header to desktop Firefox for
+// youtube.com — makes www.youtube.com serve the DESKTOP app inside Fenix
+// (m.youtube.com exposes no transcript UI at all; see test/probe-mobile.mjs).
+const DESKTOP_UA = process.env.YAPSUM_DESKTOP_UA === "1";
 
 // ---- localhost report server ------------------------------------------------
 
@@ -46,7 +51,14 @@ const server = createServer((req, res) => {
     req.on("data", (c) => (body += c));
     req.on("end", () => {
       res.writeHead(204, cors()).end();
-      try { resolveReport?.(JSON.parse(body)); } catch { resolveReport?.({ ok: false, error: "bad report body" }); }
+      try {
+        const parsed = JSON.parse(body);
+        if (parsed.ping) {
+          if (DEBUG) console.log(`  [ping] ${JSON.stringify(parsed)}`);
+        } else {
+          resolveReport?.(parsed);
+        }
+      } catch { resolveReport?.({ ok: false, error: "bad report body" }); }
     });
     return;
   }
@@ -78,8 +90,10 @@ writeFileSync(
     name: "yap-sum extraction test",
     version: "0.0.0",
     browser_specific_settings: { gecko: { id: "yapsum-test@nalg.dev" } },
-    permissions: ["https://www.youtube.com/*", "https://m.youtube.com/*", "http://127.0.0.1/*"],
-    background: { scripts: ["bg.js"], persistent: false },
+    permissions: ["webRequest", "webRequestBlocking", "https://www.youtube.com/*", "https://m.youtube.com/*", "http://127.0.0.1/*"],
+    // persistent:true — blocking webRequest listeners are rejected on MV2
+    // event pages (Fenix enforces this; bg.js dies at registration otherwise).
+    background: { scripts: ["bg.js"], persistent: true },
     content_scripts: [
       {
         matches: ["https://www.youtube.com/watch*", "https://m.youtube.com/watch*"],
@@ -94,11 +108,35 @@ writeFileSync(
 // can't reach localhost under YouTube's CSP; background isn't CSP-bound).
 writeFileSync(
   join(extDir, "bg.js"),
-  `browser.runtime.onMessage.addListener((msg) => {
+  `const report = (msg) =>
      fetch("http://127.0.0.1:${PORT}/report", {
        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(msg),
      }).catch(() => {});
-   });`
+   browser.runtime.onMessage.addListener((msg) => { report(msg); });
+   let uaRewriteOk = null, uaHits = 0;
+   ${DESKTOP_UA ? `
+   try {
+     browser.webRequest.onBeforeSendHeaders.addListener(
+       (d) => {
+         uaHits++;
+         for (const h of d.requestHeaders) {
+           if (h.name.toLowerCase() === "user-agent") h.value = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:152.0) Gecko/20100101 Firefox/152.0";
+         }
+         return { requestHeaders: d.requestHeaders };
+       },
+       { urls: ["https://www.youtube.com/*", "https://m.youtube.com/*"] },
+       ["blocking", "requestHeaders"]
+     );
+     uaRewriteOk = true;
+   } catch (e) { uaRewriteOk = String(e); }
+   setInterval(() => report({ ping: true, from: "bg", uaRewriteOk, uaHits }), 5000);
+   ` : ""}
+   report({
+     ping: true, from: "bg", loaded: true, uaRewriteOk,
+     apis: Object.keys(browser).sort().join(","),
+     manifestPerms: (browser.runtime.getManifest().permissions || []).join(","),
+   });
+   browser.permissions?.getAll?.().then((p) => report({ ping: true, from: "bg", granted: JSON.stringify(p) }));`
 );
 
 // Reporter: wait for the page to settle, run the real extractor, send result up.
@@ -108,6 +146,7 @@ writeFileSync(
      const started = Date.now();
      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
      const diag = { webdriver: navigator.webdriver };
+     browser.runtime.sendMessage({ ping: true, from: "content", href: location.href.slice(0, 90) });
      // let the SPA settle so the transcript button / player data are present
      for (let i = 0; i < 20; i++) {
        if (new URLSearchParams(location.search).get("v")) break;
@@ -122,6 +161,25 @@ writeFileSync(
          first: r.segments[0] && r.segments[0].text.slice(0, 60), diag,
        });
      } catch (e) {
+       // Post-mortem: is the panel there but undetected, or truly empty?
+       try { diag.panelInfo = globalThis.yapSum.transcriptPanelInfo(); } catch (x) { diag.panelInfo = String(x); }
+       try {
+         diag.panels = Array.from(document.querySelectorAll("[target-id]")).map((p) => ({
+           t: p.getAttribute("target-id"),
+           vis: p.getAttribute("visibility") || (p.offsetParent ? "vis" : "hidden"),
+           kids: p.querySelectorAll("*").length,
+           head: (p.innerText || "").replace(/\\s+/g, " ").slice(0, 80),
+         }));
+         const b = globalThis.yapSum.findTranscriptButton?.();
+         diag.button = b ? { tag: b.tagName.toLowerCase(), aria: b.getAttribute("aria-label"), text: (b.textContent || "").trim().slice(0, 40) } : null;
+       } catch (x) { diag.panels = String(x); }
+       try {
+         let n = 0;
+         for (const el of document.querySelectorAll("*")) {
+           if (el.children.length === 0 && /^\\d{1,2}:\\d{2}(?::\\d{2})?$/.test((el.textContent || "").trim())) n++;
+         }
+         diag.globalTsRows = n;
+       } catch {}
        browser.runtime.sendMessage({ ok: false, error: String(e), errors: e.errors, wallMs: Date.now() - started, diag });
      }
    })();`
@@ -137,25 +195,46 @@ function androidDevice() {
 }
 
 function webExtArgs(videoId, profileDir) {
-  const common = [
-    "run",
-    "--source-dir", extDir,
-    "--start-url", `https://www.youtube.com/watch?v=${videoId}`,
-    "--no-reload",
-    "--no-input",
-  ];
+  const common = ["run", "--source-dir", extDir, "--no-reload", "--no-input"];
   if (ANDROID) {
-    return [...common, "--target", "firefox-android", "--android-device", androidDevice(), "--firefox-apk", process.env.YAPSUM_FIREFOX_APK || "org.mozilla.firefox"];
+    // firefox-android does not support --start-url; we navigate via an Android
+    // VIEW intent once web-ext reports the add-on installed (see runOne).
+    return [...common, "--target", "firefox-android", "--android-device", androidDevice(), "--firefox-apk", FIREFOX_APK];
   }
-  return [...common, "--firefox", FIREFOX, "--firefox-profile", profileDir, "--profile-create-if-missing"];
+  return [
+    ...common,
+    "--start-url", `https://www.youtube.com/watch?v=${videoId}`,
+    "--firefox", FIREFOX, "--firefox-profile", profileDir, "--profile-create-if-missing",
+  ];
 }
 
 function runOne(videoId) {
+  const TIMEOUT_MS = ANDROID ? 150000 : 75000; // emulator/device: slower boot + page load
   return new Promise((resolve) => {
     let done = false;
     const profileDir = mkdtempSync(join(tmpdir(), "yapsum-ff-"));
     const child = spawn("web-ext", webExtArgs(videoId, profileDir), {
-      stdio: DEBUG ? ["ignore", "inherit", "inherit"] : "ignore",
+      stdio: ["ignore", "pipe", DEBUG ? "inherit" : "ignore"],
+    });
+    // On Android, wait for the temporary add-on install, then open the video
+    // with a VIEW intent (web-ext can't --start-url there).
+    let stdoutBuf = "";
+    child.stdout.on("data", (chunk) => {
+      if (DEBUG) process.stdout.write(chunk);
+      if (!ANDROID || stdoutBuf === null) return;
+      stdoutBuf += chunk;
+      if (/Installed .* as a temporary add-on/.test(stdoutBuf)) {
+        stdoutBuf = null; // fire once
+        try {
+          execFileSync("adb", [
+            "shell", "am", "start", "-a", "android.intent.action.VIEW",
+            "-d", `https://www.youtube.com/watch?v=${videoId}`, FIREFOX_APK,
+          ]);
+          if (DEBUG) console.log(`\n[validate] sent VIEW intent for ${videoId}`);
+        } catch (e) {
+          finish({ videoId, ok: false, error: "adb VIEW intent failed: " + e.message });
+        }
+      }
     });
     const finish = (result) => {
       if (done) return;
@@ -167,7 +246,7 @@ function runOne(videoId) {
     };
     resolveReport = (report) => finish({ videoId, ...report });
     child.on("error", (e) => finish({ videoId, ok: false, error: "web-ext spawn error: " + e.message }));
-    setTimeout(() => finish({ videoId, ok: false, error: "timeout waiting for report (75s)" }), 75000);
+    setTimeout(() => finish({ videoId, ok: false, error: `timeout waiting for report (${TIMEOUT_MS / 1000}s)` }), TIMEOUT_MS);
   });
 }
 

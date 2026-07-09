@@ -132,7 +132,7 @@ writeFileSync(
        await sleep(300);
        btn.click();
        let text = "", prevText = "", stable = 0;
-       for (let i = 0; i < 80; i++) {
+       for (let i = 0; i < 130; i++) { // PAmodern extraction can take ~40s
          await sleep(500);
          const body = document.querySelector("#yapsum-panel .yapsum-panel-body");
          text = body ? body.textContent : "";
@@ -144,8 +144,14 @@ writeFileSync(
        }
        await sleep(400); // let the final markdown render settle
        const body = document.querySelector("#yapsum-panel .yapsum-panel-body");
+       let bgLog = null;
+       try {
+         const dbg = await browser.runtime.sendMessage({ type: "getDebug" });
+         bgLog = (dbg.log || []).filter((e) => /timedtext|get_transcript|getCaptured|cc /.test(e.m)).slice(-25);
+       } catch (e) { bgLog = String(e); }
        browser.runtime.sendMessage({
          __smoke: true,
+         bgLog,
          ok: text.includes("SUMMARY_OK"),
          method: document.documentElement.dataset.yapsumMethod || "(unknown)",
          scrapeRows,
@@ -182,9 +188,10 @@ console.log("extraction method used:", report.method);
 console.log("rich text rendered (heading/list/strong):", report.renderedHeading, "/", report.renderedList, "/", report.renderedStrong);
 console.log("LLM endpoint received request:", JSON.stringify(sawLLMRequest));
 console.log("panel showed:", JSON.stringify(report.panelText || report.error));
+if (report.bgLog) console.log("bg capture log:", JSON.stringify(report.bgLog, null, 1));
 const pass =
   report.ok &&
-  (report.method === "intercept" || report.method === "scrape") &&
+  (report.method === "intercept" || report.method === "captions-intercept" || report.method === "scrape") &&
   report.renderedHeading === true &&
   report.renderedList === true &&
   report.renderedStrong === true &&

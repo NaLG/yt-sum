@@ -100,7 +100,14 @@
     return NS.buildResult(videoId, method, segs, { ms: Math.round(performance.now() - started) }, []);
   }
   const captureFor = async (videoId) =>
-    (await browser.runtime.sendMessage({ type: "getCaptured", videoId }))?.json;
+    (await browser.runtime.sendMessage({ type: "getCaptured", videoId }))?.capture;
+  // A capture is either the classic panel's get_transcript JSON or the player's
+  // own caption-track fetch (timedtext) — parse whichever we got.
+  const parseCapture = (cap) =>
+    !cap ? null
+    : cap.kind === "timedtext" ? NS.parseTimedtextBody(cap.text)
+    : NS.parseGetTranscriptJson(cap.json);
+  const methodOf = (cap) => (cap.kind === "timedtext" ? "captions-intercept" : "intercept");
 
   async function getTranscript() {
     const videoId = NS.currentVideoId();
@@ -110,12 +117,12 @@
     await browser.runtime.sendMessage({ type: "armCapture" }).catch(() => {});
 
     // 1. Already captured passively (the player fetched it — user opened the
-    //    transcript earlier, or a prior visit). No panel interaction.
+    //    transcript or had captions on earlier, or a prior visit). No UI.
     let cap = await captureFor(videoId).catch(() => null);
-    clog("passive capture?", { hit: !!cap });
+    clog("passive capture?", { hit: !!cap, kind: cap?.kind });
     if (cap) {
-      const segs = NS.parseGetTranscriptJson(cap);
-      if (segs) return result(videoId, "intercept", segs, started);
+      const segs = parseCapture(cap);
+      if (segs) return result(videoId, methodOf(cap), segs, started);
     }
 
     // 2. Transcript already rendered on the page (you had it open)? Read it
@@ -130,28 +137,67 @@
     }
     clog("scrape visible?", { segments: 0 });
 
-    // 3. Last resort: briefly open the transcript so the player fetches it, then
+    // 3. Caption-toggle trigger: flick CC on so the player fetches its own
+    //    caption track (an attested request we capture at the network layer),
+    //    then restore the previous CC state. Much subtler than opening the
+    //    panel — and the ONLY working source on the "PAmodern" panel variant,
+    //    where YouTube's own transcript panel spins forever (its get_panel
+    //    response carries no segments).
+    const ccBtn = document.querySelector(".ytp-subtitles-button");
+    if (ccBtn && ccBtn.offsetParent) {
+      const wasOn = ccBtn.getAttribute("aria-pressed") === "true";
+      clog("cc toggle trigger", { wasOn });
+      if (!wasOn) ccBtn.click();
+      for (let i = 0; i < 20 && !cap; i++) {
+        await sleep(300);
+        cap = await captureFor(videoId).catch(() => null);
+      }
+      if (!wasOn && ccBtn.getAttribute("aria-pressed") === "true") ccBtn.click(); // restore
+      if (cap) {
+        const segs = parseCapture(cap);
+        clog("cc capture", { kind: cap.kind, segs: segs ? segs.length : 0 });
+        if (segs) return result(videoId, methodOf(cap), segs, started);
+      }
+    } else {
+      clog("cc button not available");
+    }
+
+    // 4. Last resort: briefly open the transcript so the player fetches it, then
     //    capture (or scrape) and close the panel again. Only reached when the
     //    transcript is neither captured nor already visible.
     let opened = false, openErr = null;
     try { opened = await NS.openTranscriptPanel(); } catch (e) { openErr = e.message; }
     clog("last-resort open", { opened, openErr });
-    for (let i = 0; i < 40; i++) {
+    // The "PAmodern_transcript_view" variant never renders rows (its get_panel
+    // response has no segments) and only fires the capturable timedtext fetch
+    // ~10s AFTER a close/reopen — so nudge it and wait the fetch out (~40s).
+    const modernPanel = () => document.querySelector('[target-id*="PAmodern" i]');
+    let retoggles = 0;
+    for (let i = 0; i < 130; i++) {
       await sleep(300);
       cap = await captureFor(videoId).catch(() => null);
       if (cap) {
-        const s = NS.parseGetTranscriptJson(cap);
-        if (s) { NS.closeTranscriptPanel(); clog("captured after open"); return result(videoId, "intercept", s, started); }
+        const s = parseCapture(cap);
+        if (s) { NS.closeTranscriptPanel(); clog("captured after open", { kind: cap.kind }); return result(videoId, methodOf(cap), s, started); }
       }
       if (NS.scrapeVisibleTranscript()) {
         const s = await NS.scrapeTranscriptFull();
         if (s) { NS.closeTranscriptPanel(); clog("scraped after open"); return result(videoId, "scrape", s, started); }
       }
+      if (modernPanel() && retoggles < 2 && (i === 14 || i === 60)) {
+        retoggles++;
+        clog("modern panel nudge (close/reopen)", { retoggles });
+        NS.closeTranscriptPanel();
+        await sleep(400);
+        try { await NS.openTranscriptPanel(); } catch {}
+      }
+      // Non-modern variants resolve (or fail) fast — keep the old 12s budget.
+      if (!modernPanel() && i >= 40) break;
     }
     NS.closeTranscriptPanel();
     clog("last-resort open yielded nothing; trying network fallbacks");
 
-    // 4. Network reconstruction fallbacks (usually 400/PoToken-gated, but cheap).
+    // 5. Network reconstruction fallbacks (usually 400/PoToken-gated, but cheap).
     const r = await NS.extractTranscript(videoId);
     document.documentElement.dataset.yapsumMethod = r.method;
     clog("fallback result", { method: r.method });
@@ -164,8 +210,7 @@
     let bg = null;
     try { bg = await browser.runtime.sendMessage({ type: "getDebug" }); } catch (e) { bg = { error: String(e) }; }
     const q = (s) => document.querySelectorAll(s).length;
-    let btn = document.querySelector('button[aria-label*="transcript" i]');
-    if (!btn) btn = Array.from(document.querySelectorAll("button, tp-yt-paper-button, yt-button-shape")).find((x) => /transcript/i.test(x.getAttribute("aria-label") || x.textContent || ""));
+    const btn = NS.findTranscriptButton?.() || null;
 
     // If scraping missed, dump a sample of elements whose text starts with a
     // timestamp — that reveals the actual transcript-row markup of this variant.
@@ -209,7 +254,13 @@
     try {
       transcript = await getTranscript();
     } catch (e) {
-      await showError(panel, `Couldn't get a transcript for this video.\n\n${e.message}`);
+      // m.youtube.com exposes NO transcript surface at all (no panel UI, no
+      // getTranscriptEndpoint, PoToken-gated timedtext — see test/probe-mobile.mjs).
+      // The desktop site inside Firefox for Android works fully.
+      const hint = location.hostname === "m.youtube.com"
+        ? "\n\nYouTube's mobile site doesn't expose transcripts. Tap the ⋮ menu and choose \"Desktop site\", then try again."
+        : "";
+      await showError(panel, `Couldn't get a transcript for this video.${hint}\n\n${e.message}`);
       return;
     }
     setPanel(panel, `Transcript ready (${transcript.segments.length} lines). Summarizing…`);

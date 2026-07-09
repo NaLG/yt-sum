@@ -2,15 +2,21 @@
 // Transcript capture via network interception.
 //
 // YouTube gates get_transcript/timedtext behind a PoToken only its own player
-// can mint, so we let the player make the request and capture the JSON response
+// can mint, so we let the player make the request and capture the response
 // at the network layer with webRequest.filterResponseData. This is Firefox-
 // native, immune to page CSP, and independent of how the transcript is rendered
-// (no DOM scraping). The content script triggers the player (opens the panel);
-// this captures whatever get_transcript response comes back.
+// (no DOM scraping). Two capturable sources:
+//   - get_transcript: fired when the CLASSIC transcript panel opens.
+//   - /api/timedtext: fired whenever the player turns captions on. On the
+//     "PAmodern_transcript_view" A/B variant the panel uses get_panel (whose
+//     response carries NO segments — YouTube's own panel just spins), so the
+//     caption fetch is the only working source there. The content script can
+//     force it by toggling CC.
 // ============================================================================
 
 const GT_URLS = ["*://*.youtube.com/youtubei/v1/get_transcript*"];
-const capturedByVideo = new Map(); // videoId -> { at, json }
+const TT_URLS = ["*://*.youtube.com/api/timedtext*"];
+const capturedByVideo = new Map(); // videoId -> { at, kind, json?, text? }
 let lastCapture = null; // most recent, as a fallback when videoId can't be decoded
 
 // ---- diagnostics ring buffer ------------------------------------------------
@@ -42,8 +48,8 @@ function videoIdFromParams(params) {
   }
 }
 
-// Force identity encoding on get_transcript so filterResponseData sees plain
-// JSON (avoids brotli/gzip we can't decode in the filter).
+// Force identity encoding on captured endpoints so filterResponseData sees
+// plain text (avoids brotli/gzip we can't decode in the filter).
 browser.webRequest.onBeforeSendHeaders.addListener(
   (details) => {
     const requestHeaders = details.requestHeaders.filter(
@@ -52,8 +58,59 @@ browser.webRequest.onBeforeSendHeaders.addListener(
     requestHeaders.push({ name: "Accept-Encoding", value: "identity" });
     return { requestHeaders };
   },
-  { urls: GT_URLS },
+  { urls: [...GT_URLS, ...TT_URLS] },
   ["blocking", "requestHeaders"]
+);
+
+// Shared response-body collector for a request being filtered.
+function collectBody(requestId, onText, onErr) {
+  const filter = browser.webRequest.filterResponseData(requestId);
+  const chunks = [];
+  filter.ondata = (event) => {
+    chunks.push(new Uint8Array(event.data));
+    filter.write(event.data); // pass through so the player still works
+  };
+  filter.onstop = () => {
+    filter.close();
+    try {
+      let total = 0;
+      for (const c of chunks) total += c.length;
+      const all = new Uint8Array(total);
+      let off = 0;
+      for (const c of chunks) { all.set(c, off); off += c.length; }
+      onText(new TextDecoder("utf-8").decode(all));
+    } catch (e) {
+      onErr?.(e);
+    }
+  };
+  filter.onerror = () => dbg("filter error", { err: filter.error });
+}
+
+// Capture the player's own caption fetches. The URL carries v=<videoId>, and
+// the response is the FULL track in one shot (json3 or srv XML).
+browser.webRequest.onBeforeRequest.addListener(
+  (details) => {
+    const videoId = (details.url.match(/[?&]v=([\w-]{11})/) || [])[1] || null;
+    dbg("timedtext request seen", { videoId });
+    collectBody(
+      details.requestId,
+      (text) => {
+        dbg("timedtext response", { bytes: text.length, videoId, first60: text.slice(0, 60) });
+        // Empty 200s are the PoToken-gated variant — the player retries with
+        // attestation; only keep bodies that actually contain caption events.
+        // NEVER set lastCapture here: related-rail inline previews fetch
+        // timedtext for OTHER videos all the time, and the un-keyed fallback
+        // would serve their captions as the current video's transcript.
+        if (text.length > 50 && videoId) {
+          capturedByVideo.set(videoId, { at: Date.now(), kind: "timedtext", text });
+        }
+      },
+      (e) => dbg("timedtext capture error", { err: String(e) })
+    );
+    return {};
+  },
+  { urls: TT_URLS },
+  ["blocking"]
 );
 
 browser.webRequest.onBeforeRequest.addListener(
@@ -71,35 +128,21 @@ browser.webRequest.onBeforeRequest.addListener(
     }
     dbg("get_transcript request seen", { videoId, bodyOk, method: details.method });
 
-    const filter = browser.webRequest.filterResponseData(details.requestId);
-    const chunks = [];
-    filter.ondata = (event) => {
-      chunks.push(new Uint8Array(event.data));
-      filter.write(event.data); // pass through so the player still works
-    };
-    filter.onstop = () => {
-      filter.close();
-      try {
-        let total = 0;
-        for (const c of chunks) total += c.length;
-        const all = new Uint8Array(total);
-        let off = 0;
-        for (const c of chunks) { all.set(c, off); off += c.length; }
-        const text = new TextDecoder("utf-8").decode(all);
+    collectBody(
+      details.requestId,
+      (text) => {
         let json = null, parseErr = null;
         try { json = JSON.parse(text); } catch (e) { parseErr = String(e); }
         const hasSegs = !!json && JSON.stringify(json).includes("transcriptSegmentRenderer");
-        dbg("get_transcript response", { bytes: total, first80: text.slice(0, 80), parseErr, hasSegs, videoId });
+        dbg("get_transcript response", { bytes: text.length, first80: text.slice(0, 80), parseErr, hasSegs, videoId });
         if (hasSegs) {
-          const entry = { at: Date.now(), json };
+          const entry = { at: Date.now(), kind: "get_transcript", json };
           lastCapture = entry;
           if (videoId) capturedByVideo.set(videoId, entry);
         }
-      } catch (e) {
-        dbg("get_transcript capture error", { err: String(e) });
-      }
-    };
-    filter.onerror = () => dbg("filter error", { err: filter.error });
+      },
+      (e) => dbg("get_transcript capture error", { err: String(e) })
+    );
     return {};
   },
   { urls: GT_URLS },
@@ -107,11 +150,13 @@ browser.webRequest.onBeforeRequest.addListener(
 );
 
 function getCapturedFor(videoId) {
+  // Keyed entries stay valid until pruned (transcripts don't change).
   const byId = videoId && capturedByVideo.get(videoId);
-  if (byId && Date.now() - byId.at < 120000) return byId.json;
-  // Fallback: a very fresh capture whose videoId we couldn't decode is almost
-  // certainly the one the caller just triggered.
-  if (lastCapture && Date.now() - lastCapture.at < 20000) return lastCapture.json;
+  if (byId) return byId;
+  // Fallback (get_transcript only — see timedtext capture note): a very fresh
+  // capture whose params we couldn't decode is almost certainly the one the
+  // caller just triggered by opening the panel.
+  if (lastCapture && Date.now() - lastCapture.at < 20000) return lastCapture;
   return null;
 }
 
@@ -301,9 +346,10 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     return Promise.resolve({ armed: true });
   }
   if (msg?.type === "getCaptured") {
-    const json = getCapturedFor(msg.videoId);
-    dbg("getCaptured", { videoId: msg.videoId, hit: !!json });
-    return Promise.resolve({ json });
+    const cap = getCapturedFor(msg.videoId);
+    dbg("getCaptured", { videoId: msg.videoId, hit: !!cap, kind: cap?.kind });
+    // json kept for the older content-script shape; capture carries the kind.
+    return Promise.resolve({ json: cap?.kind === "get_transcript" ? cap.json : null, capture: cap ? { kind: cap.kind, json: cap.json, text: cap.text } : null });
   }
   if (msg?.type === "getDebug") {
     return Promise.resolve({
