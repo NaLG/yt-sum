@@ -1,3 +1,64 @@
+// ============================================================================
+// Transcript capture via network interception.
+//
+// YouTube gates get_transcript/timedtext behind a PoToken only its own player
+// can mint, so we let the player make the request and capture the JSON response
+// at the network layer with webRequest.filterResponseData. This is Firefox-
+// native, immune to page CSP, and independent of how the transcript is rendered
+// (no DOM scraping). The content script triggers the player (opens the panel);
+// this captures whatever get_transcript response comes back.
+// ============================================================================
+
+const GT_URLS = ["*://*.youtube.com/youtubei/v1/get_transcript*"];
+const capturedByTab = new Map(); // tabId -> { at, json }
+
+// Force identity encoding on get_transcript so filterResponseData sees plain
+// JSON (avoids brotli/gzip we can't decode in the filter).
+browser.webRequest.onBeforeSendHeaders.addListener(
+  (details) => {
+    const requestHeaders = details.requestHeaders.filter(
+      (h) => h.name.toLowerCase() !== "accept-encoding"
+    );
+    requestHeaders.push({ name: "Accept-Encoding", value: "identity" });
+    return { requestHeaders };
+  },
+  { urls: GT_URLS },
+  ["blocking", "requestHeaders"]
+);
+
+browser.webRequest.onBeforeRequest.addListener(
+  (details) => {
+    // Only capture the page's own player requests, not our own fallback fetches.
+    const filter = browser.webRequest.filterResponseData(details.requestId);
+    const chunks = [];
+    filter.ondata = (event) => {
+      chunks.push(new Uint8Array(event.data));
+      filter.write(event.data); // pass through so the player still works
+    };
+    filter.onstop = () => {
+      filter.close();
+      try {
+        let total = 0;
+        for (const c of chunks) total += c.length;
+        const all = new Uint8Array(total);
+        let off = 0;
+        for (const c of chunks) { all.set(c, off); off += c.length; }
+        const text = new TextDecoder("utf-8").decode(all);
+        const json = JSON.parse(text);
+        if (JSON.stringify(json).includes("transcriptSegmentRenderer")) {
+          capturedByTab.set(details.tabId, { at: Date.now(), json });
+        }
+      } catch {
+        /* not parseable — ignore */
+      }
+    };
+    filter.onerror = () => {};
+    return {};
+  },
+  { urls: GT_URLS },
+  ["blocking"]
+);
+
 // yap-sum background (event page) — runs the LLM call.
 // Keeps the API key out of page context and centralizes provider logic.
 // Two provider shapes:
@@ -169,7 +230,20 @@ browser.runtime.onConnect.addListener((port) => {
   });
 });
 
-// Expose defaults to the options page.
-browser.runtime.onMessage.addListener((msg) => {
+// Expose defaults to the options page, and serve captured transcripts to the
+// content script.
+browser.runtime.onMessage.addListener((msg, sender) => {
   if (msg?.type === "getDefaults") return Promise.resolve(DEFAULTS);
+  const tabId = sender.tab?.id;
+  if (msg?.type === "armCapture") {
+    // Clear any stale capture from a previous video in this tab.
+    if (tabId != null) capturedByTab.delete(tabId);
+    return Promise.resolve({ armed: true });
+  }
+  if (msg?.type === "getCaptured") {
+    const cap = tabId != null ? capturedByTab.get(tabId) : null;
+    // Only serve a fresh capture (guards against SPA nav races).
+    if (cap && Date.now() - cap.at < 120000) return Promise.resolve({ json: cap.json });
+    return Promise.resolve({ json: null });
+  }
 });

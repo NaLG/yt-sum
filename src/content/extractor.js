@@ -97,35 +97,37 @@
     return segs;
   }
 
-  async function viaPanelScrape() {
-    // Already open with content?
-    let segs = readPanelSegments();
-    if (segs.length) return { method: "panel", segments: segs };
-
-    // Expand the description (the transcript button lives inside it on desktop).
+  // Trigger YouTube's own transcript panel (which makes the player fire its
+  // attested get_transcript request). Used by the content-script intercept path
+  // and by the DOM-scrape fallback. Returns true if a trigger was clicked or a
+  // panel is already open.
+  NS.openTranscriptPanel = async function openTranscriptPanel() {
+    if (readPanelSegments().length) return true; // already open
     const expand = document.querySelector(
       "#description #expand, #expand, ytd-text-inline-expander #expand, tp-yt-paper-button#expand"
     );
     if (expand) { expand.click(); await sleep(600); }
-
     const btn = findTranscriptButton();
-    if (!btn) throw new Error("no Show transcript button (video may lack a transcript)");
+    if (!btn) throw new Error("no Show transcript control found");
     btn.scrollIntoView();
     btn.click();
+    return true;
+  };
 
-    // Wait for the panel to populate. YouTube renders the full transcript at
-    // once (not virtualized), so once segments appear they're complete.
-    for (let i = 0; i < 40; i++) {
-      await sleep(300);
-      segs = readPanelSegments();
-      if (segs.length) {
-        // Let it finish painting the tail, then read once more.
+  async function viaPanelScrape() {
+    let segs = readPanelSegments();
+    if (!segs.length) {
+      await NS.openTranscriptPanel();
+      // Wait for the panel to populate. YouTube renders the full transcript at
+      // once (not virtualized), so once segments appear they're complete.
+      for (let i = 0; i < 40 && !segs.length; i++) {
         await sleep(300);
         segs = readPanelSegments();
-        return { method: "panel", segments: segs };
       }
+      if (segs.length) { await sleep(300); segs = readPanelSegments(); } // settle tail
     }
-    throw new Error("transcript panel did not populate");
+    if (!segs.length) throw new Error("transcript panel did not populate");
+    return { method: "panel", segments: segs };
   }
 
   // ---- method 2: InnerTube get_transcript (fast path, often gated) ----------
@@ -193,13 +195,31 @@
 
   // ---- public API -----------------------------------------------------------
 
+  NS.currentVideoId = function () {
+    return (
+      new URLSearchParams(location.search).get("v") ||
+      rx(location.pathname, /\/(?:shorts|live)\/([\w-]{11})/) ||
+      null
+    );
+  };
+
+  // Parse a captured get_transcript JSON response into segments (the network
+  // intercept path). Returns null if it has no transcript.
+  NS.parseGetTranscriptJson = function (json) {
+    const segments = collectSegments(json);
+    return segments.length ? segments : null;
+  };
+
+  // Format segments into the standard result shape (shared by all methods).
+  NS.buildResult = function (videoId, method, segments, timings, errors) {
+    const text = segments.map((s) => `[${msToStamp(s.startMs)}] ${s.text}`).join("\n");
+    return { videoId, method, segments, text, chars: text.length, timings: timings || {}, errors: errors || [] };
+  };
+
   // opts.order lets tests force a single method. Default order leads with the
   // proven-reliable panel scrape.
   NS.extractTranscript = async function extractTranscript(videoId, opts = {}) {
-    videoId =
-      videoId ||
-      new URLSearchParams(location.search).get("v") ||
-      rx(location.pathname, /\/(?:shorts|live)\/([\w-]{11})/);
+    videoId = videoId || NS.currentVideoId();
     if (!videoId) throw new Error("could not determine video id");
 
     const methods = {

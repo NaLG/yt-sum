@@ -17,6 +17,8 @@
   },
   "permissions": [
     "storage",
+    "webRequest",
+    "webRequestBlocking",
     "https://www.youtube.com/*",
     "https://m.youtube.com/*",
     "https://api.openai.com/*",

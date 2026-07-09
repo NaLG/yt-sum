@@ -134,6 +134,7 @@ writeFileSync(
      browser.runtime.sendMessage({
        __smoke: true,
        ok: text.includes("SUMMARY_OK"),
+       method: document.documentElement.dataset.yapsumMethod || "(unknown)",
        panelText: text.slice(0, 400),
        isError: body ? body.classList.contains("yapsum-error") : null,
      });
@@ -156,6 +157,7 @@ try { child.kill("SIGTERM"); } catch {}
 server.close();
 
 console.log("\n--- full-path verification ---");
+console.log("extraction method used:", report.method);
 console.log("LLM endpoint received request:", JSON.stringify(sawLLMRequest));
 console.log("panel showed:", JSON.stringify(report.panelText || report.error));
 const pass =

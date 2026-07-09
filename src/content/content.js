@@ -82,12 +82,45 @@
     host.prepend(btn);
   }
 
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // Primary extraction: let YouTube's player fetch the transcript and capture
+  // its JSON response at the network layer (background webRequest filter), which
+  // is robust to UI variants. Falls back to the extractor's DOM/network methods.
+  async function getTranscript() {
+    const videoId = NS.currentVideoId();
+    const started = performance.now();
+    try {
+      await browser.runtime.sendMessage({ type: "armCapture" });
+      // Maybe the player already fetched it on page load (some variants preload).
+      let cap = (await browser.runtime.sendMessage({ type: "getCaptured", videoId }))?.json;
+      if (!cap) {
+        // Nudge the player to fetch it by opening the transcript panel.
+        try { await NS.openTranscriptPanel(); } catch { /* may be preloaded/already open */ }
+        for (let i = 0; i < 50 && !cap; i++) {
+          await sleep(300);
+          cap = (await browser.runtime.sendMessage({ type: "getCaptured", videoId }))?.json;
+        }
+      }
+      if (cap) {
+        const segs = NS.parseGetTranscriptJson(cap);
+        if (segs) {
+          document.documentElement.dataset.yapsumMethod = "intercept";
+          return NS.buildResult(videoId, "intercept", segs, { ms: Math.round(performance.now() - started) }, []);
+        }
+      }
+    } catch { /* fall through to the extractor's own methods */ }
+    const r = await NS.extractTranscript(videoId);
+    document.documentElement.dataset.yapsumMethod = r.method;
+    return r;
+  }
+
   async function onSummarizeClick() {
     const panel = openPanel();
     setPanel(panel, "Fetching transcript…");
     let transcript;
     try {
-      transcript = await NS.extractTranscript();
+      transcript = await getTranscript();
     } catch (e) {
       setPanel(panel, `Couldn't get a transcript for this video.\n\n${e.message}`, true);
       return;
