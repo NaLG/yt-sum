@@ -8,7 +8,7 @@
       "id": "yap-sum@nalg.dev",
       "strict_min_version": "115.0",
       "data_collection_permissions": {
-        "required": ["none"]
+        "required": ["websiteContent", "authenticationInfo"]
       }
     },
     "gecko_android": {
