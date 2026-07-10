@@ -1,7 +1,7 @@
 # Return YouTube Summary
 
 **The AI-summary button YouTube only *sometimes* gives you, made permanent, and
-powered by your own LLM.** One click summarizes any video from its transcript, in
+run on your own key.** One click summarizes any video from its transcript, in
 Firefox on desktop **and Android**, using **your own** API key. No backend, no
 account, no tracking. The only thing that leaves your browser is the transcript
 you send to the endpoint you chose.
@@ -16,8 +16,8 @@ with the model *you* pick (including local models that never leave your machine)
 - **One-click Summarize** button in YouTube's action row (desktop and mobile).
 - **Bring your own key:** any OpenAI-compatible endpoint, native Anthropic, or a
   local model (Ollama / LM Studio).
-- **Follow-up Q&A:** ask questions about the video, grounded in its transcript.
-- **Long videos** are summarized in parts, then synthesized into one summary.
+- **Follow-up Q&A:** ask questions about the video, based on its transcript.
+- **Long videos** are summarized in parts, then combined into one.
 - **Collapsible panel:** fold the result to a bottom bar and reopen it instantly.
 - **Safe rendering:** summaries are formatted via `textContent`, never raw HTML.
 

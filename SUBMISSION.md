@@ -9,24 +9,24 @@ must never change once published.)
 
 - **Name:** Return YouTube Summary
 - **Summary** (≤250 chars): The AI-summary button YouTube only sometimes gives
-  you, made permanent, and powered by your own LLM key. One click summarizes any
-  video from its transcript, with follow-up Q&A. No backend, no tracking; your
-  data goes only to the provider you choose.
+  you, made permanent, and run on your own key. One click summarizes any video
+  from its transcript, with follow-up Q&A. No backend, no tracking; your data
+  goes only to the provider you choose.
 - **Description:**
   > YouTube has started rolling out its own "Ask AI" / AI-summary button, but
   > it's an on-again, off-again experiment: there for some videos, some accounts,
   > some days, and gone the next. Return YouTube Summary gives you that capability
-  > **reliably, on every video**, and puts *you* in control of the AI behind it.
+  > **reliably, on every video**, with the model *you* choose.
   >
   > Click Summarize and it reads the current video's transcript and summarizes it
-  > through the LLM endpoint you configure with your own API key, so you choose
-  > the model, the cost, and where your data goes. There is no developer server;
-  > nothing is collected.
+  > through the LLM endpoint you configure with your own API key, so you control
+  > the model and where your data goes. There is no developer server; nothing is
+  > collected.
   >
   > • Bring your own key: any OpenAI-compatible endpoint, native Anthropic, or a
   >   local model (Ollama / LM Studio) that never leaves your machine.
-  > • Ask follow-up questions about the video, grounded in its transcript.
-  > • Long videos are summarized in parts, then synthesized.
+  > • Ask follow-up questions about the video, based on its transcript.
+  > • Long videos are summarized in parts, then combined.
   > • Works on desktop and Firefox for Android.
   > • Summaries render as clean, safe formatted text (never raw HTML injection).
 - **Category:** Search Tools _(alt: Other)_
