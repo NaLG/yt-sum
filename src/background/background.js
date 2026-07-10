@@ -198,7 +198,7 @@ const DEFAULTS = {
   baseUrl: "https://api.openai.com/v1",
   model: "gpt-4o-mini",
   apiKey: "",
-  buttonStyle: "text", // "text" chip or compact "icon" chip on YouTube
+  buttonStyle: "text", // "text" | "tldw" (small pill) | "icon" (round chip)
   anthropicVersion: "2023-06-01",
   systemPrompt:
     "You summarize YouTube video transcripts. Produce a tight, skimmable summary: " +

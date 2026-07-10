@@ -38,7 +38,14 @@ pulls immediately". The diagnostics stay in the code but are dormant: they
 only surface inside the failure-path debug bundle. The Copy-debug button has
 only ever existed on the failure message; success shows nothing debug-like.
 
-## Current state: v0.4.8, release-ready
+## Current state: v0.4.9, release-ready
+
+New in 0.4.9: third button style "tldw", a smaller TL;DW text pill (32px, the
+user's ask: "shorter button, a little smaller"). buttonStyle is now
+"text" (default) | "tldw" | "icon", normalized everywhere via normStyle.
+Options page shows all three with previews. Also hardened options load():
+getDefaults falls back to {} if the background page is still starting (cold
+install race; it made smoke-options flake).
 
 User confirmed on-phone (2026-07-11): the 2.5s play tip shows and the flow
 works; "functionally what we have works fine". 0.4.6 burned by phone signing.

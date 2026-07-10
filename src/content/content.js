@@ -68,19 +68,21 @@
     return el ? { el, place: "prepend" } : null;
   }
 
-  // Button style, set on the options page: "text" (default) or "icon" (compact
-  // round TL;DW chip). Cached here; storage.onChanged live-swaps it in place.
+  // Button style, set on the options page: "text" (default), "tldw" (smaller
+  // TL;DW pill), or "icon" (compact round chip). Cached here;
+  // storage.onChanged live-swaps the button in place.
+  const normStyle = (v) => (v === "icon" || v === "tldw" ? v : "text");
   let buttonStyle = "text";
   browser.storage.local.get({ buttonStyle: "text" }).then((s) => {
-    if (s.buttonStyle === "icon") {
-      buttonStyle = "icon";
+    if (normStyle(s.buttonStyle) !== buttonStyle) {
+      buttonStyle = normStyle(s.buttonStyle);
       document.getElementById("yapsum-btn")?.remove();
       ensureButton();
     }
   }).catch(() => {});
   browser.storage.onChanged.addListener((ch, area) => {
     if (area !== "local" || !ch.buttonStyle) return;
-    buttonStyle = ch.buttonStyle.newValue === "icon" ? "icon" : "text";
+    buttonStyle = normStyle(ch.buttonStyle.newValue);
     document.getElementById("yapsum-btn")?.remove();
     ensureButton();
   });
@@ -104,6 +106,10 @@
       img.src = browser.runtime.getURL("icons/icon-48.png");
       img.alt = "Summarize";
       btn.appendChild(img);
+    } else if (buttonStyle === "tldw") {
+      btn.classList.add("yapsum-btn-tldw");
+      btn.setAttribute("aria-label", "Summarize");
+      btn.textContent = "TL;DW";
     } else {
       btn.textContent = "Summarize";
     }

@@ -41,6 +41,16 @@
   }
 }
 
+/* Compact text variant: the TL;DW wordmark in a smaller pill. */
+.yapsum-btn-tldw {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
 /* Compact icon variant: a round chip holding the TL;DW mark, sized like
    YouTube's round icon buttons so it slots into tight action rows. */
 .yapsum-btn-icon {

@@ -145,12 +145,15 @@ async function loadModels(silent = false) {
 }
 
 async function load() {
-  DEFAULTS = await browser.runtime.sendMessage({ type: "getDefaults" });
+  // {} fallback: on a cold install the background page can still be starting;
+  // stored values and the curated model list must not depend on it.
+  DEFAULTS = await browser.runtime.sendMessage({ type: "getDefaults" }).catch(() => ({}));
   const stored = await browser.storage.local.get(FIELDS);
   const cfg = { ...DEFAULTS, ...stored };
   for (const f of FIELDS) if ($(f)) $(f).value = cfg[f];
   const { buttonStyle } = await browser.storage.local.get({ buttonStyle: "text" });
-  const radio = document.querySelector(`input[name="buttonStyle"][value="${buttonStyle === "icon" ? "icon" : "text"}"]`);
+  const styleVal = ["icon", "tldw"].includes(buttonStyle) ? buttonStyle : "text";
+  const radio = document.querySelector(`input[name="buttonStyle"][value="${styleVal}"]`);
   if (radio) radio.checked = true;
   updateHint();
   // Seed the dropdown with curated suggestions immediately; a live load
@@ -261,7 +264,7 @@ $("reset").addEventListener("click", reset);
 // storage.onChanged), so it saves on click rather than waiting for Save.
 for (const r of document.querySelectorAll('input[name="buttonStyle"]')) {
   r.addEventListener("change", async () => {
-    await browser.storage.local.set({ buttonStyle: r.value === "icon" ? "icon" : "text" });
+    await browser.storage.local.set({ buttonStyle: ["icon", "tldw"].includes(r.value) ? r.value : "text" });
     setStatus("Button style saved.", "ok");
   });
 }
