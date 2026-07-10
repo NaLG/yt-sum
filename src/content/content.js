@@ -52,13 +52,20 @@
   // ---- UI: inject the Summarize button --------------------------------------
 
   function buttonHost() {
-    // Both platforms: the owner row, so the chip sits right of Subscribe.
-    // (It used to go in the like/share cluster, but desktop stretches injected
-    // children there into a full-width row, and mobile renders that strip
-    // ABOVE the channel row, so the chip looked like a stray line of its own.)
-    // Fallbacks: the old action-row spots.
+    // Both platforms: right of Subscribe. Desktop: the owner row container.
+    // Mobile: anchor to the subscribe CONTROL itself and insert right after
+    // it, whatever container this A/B variant put it in. Container tags are
+    // variant-dependent (signed-in mweb merges owner + actions into ONE row
+    // with no ytm-slim-owner-renderer at all, field-confirmed 2026-07-11),
+    // but every variant has a Subscribe/Subscribed control.
     const owner = document.querySelector("ytd-watch-metadata #owner");
     if (owner) return { el: owner, place: "append" };
+    const mSub =
+      document.querySelector("ytm-subscribe-button-renderer, yt-subscribe-button-view-model") ||
+      [...document.querySelectorAll("button")].slice(0, 40)
+        .find((b) => /^(subscribe|subscribed)$/i.test((b.textContent || "").trim())) ||
+      null;
+    if (mSub) return { el: mSub, place: "after" };
     const mOwner = document.querySelector("ytm-slim-owner-renderer");
     if (mOwner) return { el: mOwner, place: "append" };
     const el =
@@ -96,10 +103,14 @@
     if (!host) return;
     // The preferred host can hydrate AFTER a fallback (on mweb the actions
     // strip appears before the owner row), so a button parked in the wrong
-    // host must MIGRATE when a better one shows up; "already connected" is
-    // only good enough when it's connected to the host we actually want.
+    // spot must MIGRATE when a better one shows up; "already connected" is
+    // only good enough when it's connected where we actually want it.
     const existing = document.getElementById("yapsum-btn");
-    if (existing && existing.isConnected && existing.parentElement === host.el) return;
+    const placedRight = existing && existing.isConnected &&
+      (host.place === "after"
+        ? existing.previousElementSibling === host.el
+        : existing.parentElement === host.el);
+    if (placedRight) return;
     if (existing) existing.remove();
     const btn = document.createElement("button");
     btn.id = "yapsum-btn";
@@ -120,19 +131,23 @@
       btn.textContent = "Summarize";
     }
     btn.addEventListener("click", onSummarizeClick);
-    const mobileOwner = host.el.tagName?.toLowerCase() === "ytm-slim-owner-renderer";
-    if (mobileOwner) btn.classList.add("yapsum-btn-mrow"); // compact, matches the row's scale
-    host.el[host.place](btn);
-    console.log(`${LOG} button placed in <${host.el.tagName.toLowerCase()}> (${host.place})`, {
+    const mobile = location.hostname === "m.youtube.com";
+    if (mobile) btn.classList.add("yapsum-btn-mrow"); // compact, matches mweb row scale
+    if (host.place === "after") host.el.insertAdjacentElement("afterend", btn);
+    else host.el[host.place](btn);
+    console.log(`${LOG} button ${host.place} <${host.el.tagName.toLowerCase()}>`, {
       dOwner: !!document.querySelector("ytd-watch-metadata #owner"),
+      mSubTag: !!document.querySelector("ytm-subscribe-button-renderer, yt-subscribe-button-view-model"),
       mOwner: !!document.querySelector("ytm-slim-owner-renderer"),
       slimBar: !!document.querySelector("ytm-slim-video-action-bar-renderer"),
     });
-    if (mobileOwner && buttonStyle === "text") {
-      // The mobile owner row is tight (avatar + name + Subscribe). If the full
-      // label overflows the row, collapse it to "Sum" rather than wrapping.
+    if (mobile && buttonStyle === "text") {
+      // Mobile rows are tight (the merged variant packs avatar + Subscribed +
+      // all the action icons into one row). If the full label overflows the
+      // row we landed in, collapse it to "Sum" rather than wrapping.
       requestAnimationFrame(() => {
-        if (host.el.scrollWidth > host.el.clientWidth + 1) btn.textContent = "Sum";
+        const row = btn.parentElement;
+        if (row && row.scrollWidth > row.clientWidth + 1) btn.textContent = "Sum";
       });
     }
   }
@@ -311,6 +326,11 @@
       error: errorMsg,
       ua: navigator.userAgent,
       pageFacts: {
+        // Summarize-button placement truth, so misplacement reports carry the
+        // DOM facts for whatever A/B variant the reporter's page is running.
+        summarizeBtnParent: document.getElementById("yapsum-btn")?.parentElement?.tagName?.toLowerCase() || null,
+        summarizeBtnPrevSibling: document.getElementById("yapsum-btn")?.previousElementSibling?.tagName?.toLowerCase() || null,
+        subscribeAnchors: ["ytm-subscribe-button-renderer", "yt-subscribe-button-view-model", "ytm-slim-owner-renderer", "ytd-watch-metadata #owner"].filter((s) => document.querySelector(s)),
         transcriptButtonFound: !!btn,
         transcriptButtonLabel: btn ? (btn.getAttribute("aria-label") || btn.textContent || "").trim().slice(0, 40) : null,
         genericScrapeRows: scrapeCount,

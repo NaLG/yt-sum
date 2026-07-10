@@ -38,7 +38,28 @@ pulls immediately". The diagnostics stay in the code but are dormant: they
 only surface inside the failure-path debug bundle. The Copy-debug button has
 only ever existed on the failure message; success shows nothing debug-like.
 
-## Current state: v0.4.12, mobile placement VERIFIED ON-SCREEN (emulator)
+## Current state: v0.4.13, mobile placement verified on the USER'S OWN mweb variant
+
+v0.4.12 still failed on the user's phone. Second root cause: mweb A/B
+variants. The user's signed-in layout is the MERGED-ROW variant: avatar +
+Subscribe(d) + like/dislike/share/save all in ONE row, and it contains NO
+ytm-slim-owner-renderer at all, so the container-tag targeting missed and
+fell back to the strip again. (The 0.4.12 emulator "proof" had silently
+bounced through a desktop-param URL and verified a DIFFERENT variant, the
+two-row Join/Subscribe one. Trap for the future: check the address bar says
+m.youtube.com in verification screenshots.)
+
+Fix (0.4.13): stop targeting containers on mobile. Anchor the SUBSCRIBE
+CONTROL itself (ytm-subscribe-button-renderer, yt-subscribe-button-view-model,
+or first of the first-40 buttons whose text is Subscribe/Subscribed) and
+insertAdjacentElement("afterend"). Right-of-Subscribe by construction on any
+variant. Verified by emulator screenshot ON the merged-row variant (true
+m.youtube.com URL): avatar, Subscribe, Summarize, then the action icons, one
+row. The Sum overflow-collapse now measures the actual parent row. The debug
+bundle's pageFacts now report summarizeBtnParent/PrevSibling + which subscribe
+anchors exist, so any future misplacement report carries the DOM truth.
+
+## Previous: v0.4.12 emulator round (superseded, kept for the method)
 
 v0.4.11 (owner-row placement) still failed on the user's phone. ROOT CAUSE,
 found by actually screenshotting the emulator: mweb hydrates the actions strip
