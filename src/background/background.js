@@ -422,7 +422,7 @@ browser.runtime.onConnect.addListener((port) => {
     if (!cfg.apiKey) {
       port.postMessage({
         type: "error",
-        error: "No API key configured. Open yap-sum settings and add your provider + API key.",
+        error: "No API key configured. Open the Return YouTube Summary settings (toolbar icon, then Settings) and add your provider + API key. The settings page links to where to get one; Google Gemini has a free tier.",
       });
       return;
     }

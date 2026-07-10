@@ -38,7 +38,13 @@ pulls immediately". The diagnostics stay in the code but are dormant: they
 only surface inside the failure-path debug bundle. The Copy-debug button has
 only ever existed on the failure message; success shows nothing debug-like.
 
-## Current state: v0.4.9, release-ready
+## Current state: v0.4.10, release-ready
+
+New in 0.4.10: last user-visible "yap-sum" strings rebranded (the no-API-key
+error now names Return YouTube Summary and points at the settings links; the
+host-permission-declined error too). Settings API-key field links each
+provider's key page (Gemini free tier called out) plus Ollama/LM Studio for
+the no-key local path. Button-style radios stack vertically.
 
 New in 0.4.9: third button style "tldw", a smaller TL;DW text pill (32px, the
 user's ask: "shorter button, a little smaller"). buttonStyle is now

@@ -184,7 +184,7 @@ async function ensureHostPermission(baseUrl) {
     );
   }
   const granted = await browser.permissions.request({ origins: [origin] });
-  if (!granted) throw new Error(`Permission to reach ${origin} was declined. yap-sum can't call that endpoint without it.`);
+  if (!granted) throw new Error(`Permission to reach ${origin} was declined. Return YouTube Summary can't call that endpoint without it.`);
   return true;
 }
 
