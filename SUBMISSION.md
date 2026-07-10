@@ -29,6 +29,8 @@ must never change once published.)
   > • Long videos are summarized in parts, then combined.
   > • Works on desktop and Firefox for Android.
   > • Summaries render as clean, safe formatted text (never raw HTML injection).
+  > • Note: some videos only expose their transcript once playback starts; the
+  >   panel prompts you to press play and then continues automatically.
 - **Category:** Search Tools _(alt: Other)_
 - **Tags:** youtube, summary, ai, llm, transcript, productivity
 - **Support / homepage:** the GitHub repository (publisher **nalg**).

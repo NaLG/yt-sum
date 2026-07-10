@@ -145,7 +145,9 @@
     //     the video is paused/restored back in onSummarizeClick's finally.
     if (!cap && location.hostname === "m.youtube.com" && mobilePlayback) {
       clog("mobile: awaiting playback-triggered capture", { playing: !mobilePlayback.v.paused });
-      for (let i = 0; i < 50 && !cap; i++) { // ~15s
+      // ~35s: the in-panel tip asks a paused user to press play at 2.5s, and
+      // field traces show the player's caption fetch can lag playback by a lot.
+      for (let i = 0; i < 115 && !cap; i++) {
         await sleep(300);
         cap = await captureFor(videoId).catch(() => null);
       }
@@ -181,39 +183,42 @@
       clog("cc button not available");
     }
 
-    // 4. Last resort: briefly open the transcript so the player fetches it, then
-    //    capture (or scrape) and close the panel again. Only reached when the
-    //    transcript is neither captured nor already visible.
-    let opened = false, openErr = null;
-    try { opened = await NS.openTranscriptPanel(); } catch (e) { openErr = e.message; }
-    clog("last-resort open", { opened, openErr });
-    // The "PAmodern_transcript_view" variant never renders rows (its get_panel
-    // response has no segments) and only fires the capturable timedtext fetch
-    // ~10s AFTER a close/reopen, so nudge it and wait the fetch out (~40s).
-    const modernPanel = () => document.querySelector('[target-id*="PAmodern" i]');
-    let retoggles = 0;
-    for (let i = 0; i < 130; i++) {
-      await sleep(300);
-      cap = await captureFor(videoId).catch(() => null);
-      if (cap) {
-        const s = parseCapture(cap);
-        if (s) { NS.closeTranscriptPanel(); clog("captured after open", { kind: cap.kind }); return result(videoId, methodOf(cap), s, started); }
+    // 4. Last resort (desktop only): briefly open the transcript so the player
+    //    fetches it, then capture (or scrape) and close the panel again.
+    //    m.youtube.com has no transcript control at all; poking at it just
+    //    expands the description sheet in the user's face and wastes ~13s.
+    if (location.hostname !== "m.youtube.com") {
+      let opened = false, openErr = null;
+      try { opened = await NS.openTranscriptPanel(); } catch (e) { openErr = e.message; }
+      clog("last-resort open", { opened, openErr });
+      // The "PAmodern_transcript_view" variant never renders rows (its get_panel
+      // response has no segments) and only fires the capturable timedtext fetch
+      // ~10s AFTER a close/reopen, so nudge it and wait the fetch out (~40s).
+      const modernPanel = () => document.querySelector('[target-id*="PAmodern" i]');
+      let retoggles = 0;
+      for (let i = 0; i < 130; i++) {
+        await sleep(300);
+        cap = await captureFor(videoId).catch(() => null);
+        if (cap) {
+          const s = parseCapture(cap);
+          if (s) { NS.closeTranscriptPanel(); clog("captured after open", { kind: cap.kind }); return result(videoId, methodOf(cap), s, started); }
+        }
+        if (NS.scrapeVisibleTranscript()) {
+          const s = await NS.scrapeTranscriptFull();
+          if (s) { NS.closeTranscriptPanel(); clog("scraped after open"); return result(videoId, "scrape", s, started); }
+        }
+        if (modernPanel() && retoggles < 2 && (i === 14 || i === 60)) {
+          retoggles++;
+          clog("modern panel nudge (close/reopen)", { retoggles });
+          NS.closeTranscriptPanel();
+          await sleep(400);
+          try { await NS.openTranscriptPanel(); } catch {}
+        }
+        // Non-modern variants resolve (or fail) fast, keep the old 12s budget.
+        if (!modernPanel() && i >= 40) break;
       }
-      if (NS.scrapeVisibleTranscript()) {
-        const s = await NS.scrapeTranscriptFull();
-        if (s) { NS.closeTranscriptPanel(); clog("scraped after open"); return result(videoId, "scrape", s, started); }
-      }
-      if (modernPanel() && retoggles < 2 && (i === 14 || i === 60)) {
-        retoggles++;
-        clog("modern panel nudge (close/reopen)", { retoggles });
-        NS.closeTranscriptPanel();
-        await sleep(400);
-        try { await NS.openTranscriptPanel(); } catch {}
-      }
-      // Non-modern variants resolve (or fail) fast, keep the old 12s budget.
-      if (!modernPanel() && i >= 40) break;
+      NS.closeTranscriptPanel();
     }
-    NS.closeTranscriptPanel();
     clog("last-resort open yielded nothing; trying network fallbacks");
 
     // 5. Network reconstruction fallbacks (usually 400/PoToken-gated, but cheap).
@@ -292,11 +297,53 @@
     } catch {}
   }
 
+  // Per-tab, in-memory cache of finished summaries so returning to a video
+  // re-summons its summary and Q&A instantly, with no re-extraction and no
+  // second LLM bill. Never persisted (dies with the tab); entries expire after
+  // SUMMARY_TTL_MS of disuse, oldest dropped beyond SUMMARY_CACHE_MAX.
+  const SUMMARY_TTL_MS = 30 * 60 * 1000;
+  const SUMMARY_CACHE_MAX = 10;
+  const summaryCache = new Map(); // videoId -> { title, transcript, summary, qa, ts }
+  function cachedSummary(videoId) {
+    const e = summaryCache.get(videoId);
+    if (!e) return null;
+    if (Date.now() - e.ts > SUMMARY_TTL_MS) { summaryCache.delete(videoId); return null; }
+    e.ts = Date.now(); // sliding expiry: videos you keep coming back to stay warm
+    return e;
+  }
+  function rememberSummary(videoId, entry) {
+    summaryCache.delete(videoId);
+    summaryCache.set(videoId, { ...entry, ts: Date.now() });
+    for (const k of summaryCache.keys()) {
+      if (summaryCache.size <= SUMMARY_CACHE_MAX) break;
+      summaryCache.delete(k);
+    }
+  }
+
   async function onSummarizeClick() {
     const panel = openPanel();
     panel.classList.remove("yapsum-collapsed"); // re-summarizing always expands
+    const cached = cachedSummary(currentVideoId());
+    if (cached) {
+      setPanel(panel, ""); // clears any error/streaming state
+      renderMarkdown(cached.summary, panel.querySelector(".yapsum-panel-body"));
+      mountFollowup(panel, cached); // replays the cached Q&A turns
+      return;
+    }
     setPanel(panel, "Fetching transcript…");
     kickMobilePlayback(); // synchronous, MUST stay before the first await below
+    // If we're still waiting after a beat, tell the user the one thing that
+    // reliably unsticks it: play the video. getTranscript keeps polling for
+    // the capture the whole time, so their tap is picked up within ~300ms.
+    // On mobile this shows UNCONDITIONALLY: the muted nudge can flip
+    // video.paused to false while real playback never starts (autoplay
+    // block), so the paused check suppressed the tip exactly when it was
+    // needed. Desktop keeps the paused gate to avoid noise.
+    const playHint = setTimeout(() => {
+      const v = document.querySelector("video");
+      if (location.hostname === "m.youtube.com" || !v || v.paused)
+        setPanel(panel, "Fetching transcript…\nTip: play the video to load the transcript.");
+    }, 2500);
     let transcript;
     try {
       transcript = await getTranscript();
@@ -305,11 +352,12 @@
       // getTranscriptEndpoint, PoToken-gated timedtext, see test/probe-mobile.mjs).
       // The desktop site inside Firefox for Android works fully.
       const hint = location.hostname === "m.youtube.com"
-        ? "\n\nYouTube's mobile site doesn't expose transcripts. Tap the ⋮ menu and choose \"Desktop site\", then try again."
+        ? "\n\nTry playing the video for a few seconds, then tap Summarize again. If that still fails, tap the ⋮ menu, choose \"Desktop site\", and retry."
         : "";
       await showError(panel, `Couldn't get a transcript for this video.${hint}\n\n${e.message}`);
       return;
     } finally {
+      clearTimeout(playHint); // never let a late hint clobber the summary
       restoreMobilePlayback(); // pause + rewind the video we nudged, always
     }
     setPanel(panel, `Transcript ready (${transcript.segments.length} lines). Summarizing…`);
@@ -331,7 +379,11 @@
       );
       const finalText = summary != null ? summary : acc;
       renderMarkdown(finalText, body); // final clean render
-      mountFollowup(panel, { title, transcript: transcript.text, summary: finalText });
+      const qa = [];
+      mountFollowup(panel, { title, transcript: transcript.text, summary: finalText, qa });
+      // qa is stored BY REFERENCE: follow-up turns pushed later land in the
+      // cache entry automatically.
+      rememberSummary(transcript.videoId, { title, transcript: transcript.text, summary: finalText, qa });
     } catch (e) {
       setPanel(panel, `Summary failed:\n\n${e.message}`, true);
     }
@@ -354,7 +406,18 @@
     panel.appendChild(bar);
 
     const body = panel.querySelector(".yapsum-panel-body");
-    const qa = [];
+    // Restoring from the cache replays prior turns; fresh summaries pass an
+    // empty array (shared with the cache entry, see onSummarizeClick).
+    const qa = ctx.qa || (ctx.qa = []);
+    for (const turn of qa) {
+      const qEl = document.createElement("p");
+      qEl.className = "yapsum-qa-q";
+      qEl.textContent = turn.q; // textContent only, injection-safe
+      const aEl = document.createElement("div");
+      aEl.className = "yapsum-qa-a";
+      renderMarkdown(turn.a, aEl);
+      body.append(qEl, aEl);
+    }
     const ask = async () => {
       const question = input.value.trim();
       if (!question || input.disabled) return;
@@ -571,8 +634,12 @@
 
   // ---- lifecycle: survive SPA navigation ------------------------------------
 
+  let lastNavHref = location.href;
+  let lastNavVid = currentVideoId();
   function onNavigate() {
-    document.getElementById("yapsum-panel")?.remove();
+    lastNavHref = location.href;
+    lastNavVid = currentVideoId();
+    document.getElementById("yapsum-panel")?.remove(); // stale video's summary; the cache re-summons it
     // button host is rebuilt by YouTube on navigation; re-inject when ready
     ensureButton();
     if (location.hash.includes("yapsum-selftest")) runSelfTest();
@@ -589,8 +656,17 @@
 
   // YouTube's polymer app rebuilds the actions row on navigation and during
   // hydration, wiping injected nodes. A MutationObserver re-adds the button
-  // whenever it goes missing, more robust than a one-shot poll.
-  const observer = new MutationObserver(() => ensureButton());
+  // whenever it goes missing, more robust than a one-shot poll. It doubles as
+  // the SPA-navigation detector for m.youtube.com, which never fires
+  // yt-navigate-finish: a URL change only counts as navigation when the video
+  // id changed, so chapter/timestamp URL rewrites don't nuke the panel.
+  const observer = new MutationObserver(() => {
+    if (location.href !== lastNavHref) {
+      lastNavHref = location.href;
+      if (currentVideoId() !== lastNavVid) onNavigate();
+    }
+    ensureButton();
+  });
   observer.observe(document.documentElement, { childList: true, subtree: true });
   ensureButton();
 

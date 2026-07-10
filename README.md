@@ -35,29 +35,18 @@ Configure in Settings. Two shapes cover essentially everything:
 
 ## Technical details on Extraction
 
-(Full details in XYZ.md)
+Getting the transcript is the hard part: the endpoints most guides describe are
+now gated behind an attestation only YouTube's own player can produce. So the
+extension doesn't make its own requests; it lets YouTube's player fetch the
+transcript and captures the response at the network layer in the background
+script. The full story (what fails, what works, and the mobile wrinkles) is in
+[docs/EXTRACTION.md](docs/EXTRACTION.md).
 
-Getting the transcript is the hard part, and the approach is **counter to most
-guides**. Empirically (mid-2026), the usual recipes fail:
+## Known quirk
 
-- **`timedtext`** (captionTracks baseUrl) is PoToken-gated, returns an **empty
-  HTTP 200**.
-- **Reconstructing the `get_transcript` POST** returns **400 `failedPrecondition`**
-  everywhere, YouTube gates it on an attestation only its own player mints.
-
-What works: **let YouTube's own player make the request, and capture its response
-at the network layer** with `webRequest.filterResponseData` in the background, 
-immune to page CSP and independent of how the transcript is rendered. Two sources
-are captured (keyed by video id): the classic panel's `get_transcript` JSON and
-the player's `/api/timedtext` caption track. On desktop the extension nudges the
-transcript/captions to fire; on **mobile** it briefly starts playback (muted,
-then restores the video) because the mobile player only fetches the transcript
-once playback begins. Fallbacks: DOM-panel scrape → reconstruction → timedtext.
-See `src/background/background.js` and `src/content/`.
-
-> Mobile note: `m.youtube.com` exposes no transcript UI, so the extension relies
-> on the network-intercept path there. A signed install keeps the `webRequest`
-> permission it needs; see [MOBILE-TESTING.md](MOBILE-TESTING.md).
+Some videos (mostly on Android) only expose their transcript once playback
+starts. If fetching stalls, the panel says so: press play, and the summary
+continues on its own within a second or two.
 
 ## Develop & test
 
@@ -108,6 +97,7 @@ test/
   smoke-full.mjs            authoritative end-to-end test (extract → summary → Q&A)
   webext-validate.mjs       extraction test (desktop + android)
   probe-*.mjs               probes used to characterize YouTube's transcript variants
+docs/                       EXTRACTION.md (how transcripts are captured) + screenshots
 scripts/                    android emulator + device launchers
 ```
 

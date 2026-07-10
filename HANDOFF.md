@@ -16,7 +16,75 @@ LLM API key. No backend, no tracking.
   CSS `.yapsum-*` classes, storage keys, and the local dir / npm name `yap-sum`.
   Only the user-facing display strings are "Return YouTube Summary" / "TL;DW".
 
-## Current state: v0.4.1, working
+## OPEN INVESTIGATION: mobile empty timedtext (2026-07-11, v0.4.5)
+
+Field failure on the user's phone (Android 16, Fx 152, m.youtube.com, video
+i2YQUXykYM0): video playing, ~50s of capture polling, then ONE player-initiated
+timedtext at ~57s whose body was 0 bytes. Desktop extracts the same video fine
+(smoke-full PASS, method intercept), and the video has an asr captionTracks
+entry on both sites, so the video is healthy; this is mweb-specific.
+
+Hypotheses, in order: (a) mweb's lone timedtext was a pot-less probe and no
+pot-carrying retry followed because captions were never displayed; (b) YouTube
+now empty-200s even the mweb player (arms race move: then Tier 2 iframe is the
+answer); (c) the body exists but is invisible to filterResponseData (service
+worker / cache path; desktop test profiles are SW-free, the user's phone
+isn't). v0.4.5 adds discriminating diagnostics: timedtext request logs
+pot/fmt/kind/lang, and an onCompleted listener logs status + fromCache.
+
+USER DECISION (2026-07-11): no field diagnostics; ship with the play tip. The
+user's lived experience is "if the video is (really) playing, the transcript
+pulls immediately". The diagnostics stay in the code but are dormant: they
+only surface inside the failure-path debug bundle. The Copy-debug button has
+only ever existed on the failure message; success shows nothing debug-like.
+
+## Current state: v0.4.7, release-ready
+
+User confirmed on-phone (2026-07-11): the 2.5s play tip shows and the flow
+works; "functionally what we have works fine". 0.4.6 burned by phone signing.
+
+New in 0.4.7: browser_action default_title is now just "Return YouTube
+Summary". It was "...: summarize this video", and Firefox's unified extensions
+panel labels the row with the ACTION title, so users saw "Return YouTube
+Summary: s..." truncated. Also documented the play-to-load quirk in README
+("Known quirk") and the AMO listing description (SUBMISSION.md).
+
+New in 0.4.5: diagnostics above; mobile playback-capture window 15s -> 35s
+(field trace showed the caption fetch lagging the give-up); the transcript
+panel-poke phase is now desktop-only (on m.youtube.com it just expanded the
+description sheet in the user's face, could never work, and wasted ~13s).
+
+New in 0.4.6 (THE mobile fix): the 2.5s play tip now shows UNCONDITIONALLY on
+m.youtube.com while the transcript is pending. It was gated on video.paused,
+and the muted nudge flips paused to false while real playback never starts
+(autoplay block), so the tip suppressed itself exactly when needed; the field
+trace's "playing: true" with a stalled video is this. Desktop keeps the
+paused gate. A real user tap on play pulls the transcript within a beat and
+the flow continues automatically (capture polling runs the whole time).
+
+Version bookkeeping: 0.4.1-0.4.3 were consumed (or reserved) by unlisted
+signing for phone testing; AMO version numbers are unique per add-on id across
+channels, so the public listing upload is 0.4.4+.
+
+New in 0.4.3: if the transcript is still fetching after 2.5s and the video is
+paused (autoplay blocked, so the muted nudge did nothing), the panel shows a
+terse tip to press play; user-confirmed that playing pulls the capture
+immediately. The total-failure error on mobile now leads with "play for a few
+seconds, retry" before the desktop-site advice.
+
+New in 0.4.4:
+- Panel is dropped on SPA navigation on MOBILE too. Desktop always had this
+  via yt-navigate-finish, but m.youtube.com never fires it, so the old video's
+  panel used to ride along to the next page. The button MutationObserver now
+  doubles as a URL-change detector, gated on the video id actually changing
+  (chapter/timestamp URL rewrites must not remove the panel).
+- Per-tab in-memory summary cache (videoId -> summary + Q&A turns), 30 min
+  sliding TTL, max 10 entries, never persisted. Returning to a summarized
+  video and tapping Summarize restores summary AND chat instantly, no LLM
+  call. The qa array is shared by reference with the cache entry, so new
+  follow-ups persist automatically. Note: within the TTL, Summarize restores
+  rather than regenerates; a "regenerate" affordance is a possible later add.
+- Settings page footnote links feedback/bug reports to the GitHub repo issues.
 
 Verified end-to-end on desktop (real key, user-confirmed) and via the mock-LLM
 smoke tests. Features: one-click Summarize; transcript via network intercept
@@ -117,7 +185,7 @@ should say "Hi NaLG/yt-sum!".
 
 ## Extraction: the hard-won lessons (do not relearn these)
 
-See README "Extraction" and the code comments. In short: reconstructing
+See `docs/EXTRACTION.md` and the code comments. In short: reconstructing
 `get_transcript` returns 400 and fetching `timedtext` ourselves returns an empty
 200 (both attestation/PoToken gated). The only reliable path is to let YouTube's
 own player make the request and capture the response at the network layer

@@ -91,7 +91,12 @@ function collectBody(requestId, onText, onErr) {
 browser.webRequest.onBeforeRequest.addListener(
   (details) => {
     const videoId = (details.url.match(/[?&]v=([\w-]{11})/) || [])[1] || null;
-    dbg("timedtext request seen", { videoId });
+    // pot = the player attached its attestation token. An empty body WITH pot
+    // means YouTube gated the player itself (bad); without pot it's just the
+    // probe variant and a pot-carrying retry may follow.
+    let q = null;
+    try { q = new URL(details.url).searchParams; } catch {}
+    dbg("timedtext request seen", { videoId, pot: !!q?.has("pot"), fmt: q?.get("fmt") ?? null, kind: q?.get("kind") ?? null, lang: q?.get("lang") ?? null });
     collectBody(
       details.requestId,
       (text) => {
@@ -111,6 +116,20 @@ browser.webRequest.onBeforeRequest.addListener(
   },
   { urls: TT_URLS },
   ["blocking"]
+);
+
+// Diagnostic: status + cache facts for the captured endpoints. A 200 that
+// filterResponseData saw as 0 bytes but arrived fromCache/service-worker
+// means the real body exists and is simply invisible to the filter.
+browser.webRequest.onCompleted.addListener(
+  (d) =>
+    dbg("completed", {
+      ep: d.url.includes("timedtext") ? "timedtext" : "get_transcript",
+      status: d.statusCode,
+      fromCache: !!d.fromCache,
+      videoId: (d.url.match(/[?&]v=([\w-]{11})/) || [])[1] || null,
+    }),
+  { urls: [...GT_URLS, ...TT_URLS] }
 );
 
 browser.webRequest.onBeforeRequest.addListener(
