@@ -183,7 +183,7 @@ Full listing copy + reviewer notes are in `SUBMISSION.md`. Short version:
 
 ## Test and verify
 
-Canonical command list lives in README "Develop & test"; kept here for resume
+Canonical command list lives in docs/DEVELOPMENT.md; kept here for resume
 convenience:
 
 ```

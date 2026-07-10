@@ -20,6 +20,17 @@ you send to the endpoint you chose.
 - **Collapsible panel:** fold the result to a bottom bar and reopen it instantly.
 - **Safe rendering:** summaries are formatted via `textContent`, never raw HTML.
 
+## Getting started
+
+1. Install the extension (coming to addons.mozilla.org; until then, build from
+   source via [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)).
+2. Click the toolbar icon and open **Settings**: pick a provider and paste an
+   API key. New to API keys? The settings page links each provider's key page.
+   Google Gemini has a free tier, and local models (Ollama / LM Studio) need no
+   key at all.
+3. Open any YouTube video and hit **Summarize**. Ask follow-up questions right
+   in the panel.
+
 ## Providers (BYOK)
 
 Your API key lives in `storage.local` and is only ever sent to the endpoint you
@@ -48,60 +59,9 @@ Some videos (mostly on Android) only expose their transcript once playback
 starts. If fetching stalls, the panel says so: press play, and the summary
 continues on its own within a second or two.
 
-## Develop & test
+## For developers
 
-```sh
-npm install
-npm run lint                         # web-ext lint (0 errors)
-npm run run:desktop                  # launch in desktop Firefox on a test video
-node test/smoke-full.mjs [VIDEO_ID]  # AUTHORITATIVE full path: click → extract →
-                                     #   (mock LLM) → rendered summary → follow-up
-YAPSUM_CHUNK=1 node test/smoke-full.mjs   # exercise the long-video chunking path
-node test/smoke-options.mjs          # settings page
-node test/smoke-ui.mjs               # button injection
-node test/webext-validate.mjs        # extraction-only, in real Firefox
-npm run build                        # -> dist/<name>-<version>.zip
-```
-
-Tests run the **real** source inside a normal Firefox via `web-ext` (never
-WebDriver, YouTube detects and blocks marionette) and relay results to a
-localhost server.
-
-### Android (device or device-free emulator)
-
-```sh
-npm run emulator                     # boot a headless emulator, provisioned for tests
-npm run test:android                 # extraction test on the emulator/device
-npm run run:android                  # launch on a USB-connected phone
-```
-
-See [MOBILE-TESTING.md](MOBILE-TESTING.md) for installing on a real phone and the
-signing path.
-
-## Publishing
-
-[SUBMISSION.md](SUBMISSION.md) is the AMO submission kit, listing copy, data
-disclosure, reviewer notes, and the build/sign steps.
-
-## Layout
-
-```
-src/
-  manifest.json             MV2 (Mozilla's recommendation for Firefox Android)
-  content/
-    extractor.js            transcript parsing (page-context; also test-imported)
-    content.js              button injection, summarize + follow-up flow, panel UI
-    content.css             injected styles (light/dark, mobile bottom-sheet)
-  background/background.js   network intercept + LLM providers + SSE streaming
-  options/                  settings page + toolbar popup
-  icons/                    48/96/128/512 (green "TL;DW" mark)
-test/
-  smoke-full.mjs            authoritative end-to-end test (extract → summary → Q&A)
-  webext-validate.mjs       extraction test (desktop + android)
-  probe*.mjs                probes used to characterize YouTube's transcript variants
-docs/                       EXTRACTION.md (how transcripts are captured) + screenshots
-scripts/                    android emulator + device launchers
-```
+Build, test, and release docs live in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 
 ## License
 
