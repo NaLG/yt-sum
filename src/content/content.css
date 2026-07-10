@@ -67,6 +67,26 @@
   display: block;
 }
 
+/* Mobile owner-row placement (right of Subscribe): match that row's compact
+   scale whatever the chosen style. Must come after the style variants so the
+   size overrides win. */
+.yapsum-btn-mrow {
+  height: 32px;
+  padding: 0 10px;
+  margin: 0 0 0 8px;
+  border-radius: 16px;
+  font-size: 12px;
+}
+.yapsum-btn-mrow.yapsum-btn-icon {
+  width: 32px;
+  min-width: 32px;
+  padding: 0;
+}
+.yapsum-btn-mrow.yapsum-btn-icon img {
+  width: 20px;
+  height: 20px;
+}
+
 .yapsum-panel {
   position: fixed;
   top: 72px;

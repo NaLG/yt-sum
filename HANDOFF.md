@@ -38,7 +38,17 @@ pulls immediately". The diagnostics stay in the code but are dormant: they
 only surface inside the failure-path debug bundle. The Copy-debug button has
 only ever existed on the failure message; success shows nothing debug-like.
 
-## Current state: v0.4.10, release-ready
+## Current state: v0.4.11, awaiting phone confirm of mobile owner-row placement
+
+New in 0.4.11: mobile button placement moved to the OWNER row too, appended
+right of Subscribe (ytm-slim-owner-renderer; verified slimOwnerRenderer still
+in current mweb page data). Field result on 0.4.10 was that the actions strip
+renders ABOVE the channel row on mweb, so the chip read as a stray line of its
+own. The chip gets .yapsum-btn-mrow there (32px compact scale for any style),
+and the text style collapses "Summarize" -> "Sum" if the row overflows
+(scrollWidth check after insertion). Slim action bar remains the fallback.
+This retires the old "fit the button inline on mobile" open-work item if the
+phone test confirms.
 
 New in 0.4.10: last user-visible "yap-sum" strings rebranded (the no-API-key
 error now names Return YouTube Summary and points at the settings links; the

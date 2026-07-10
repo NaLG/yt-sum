@@ -52,12 +52,15 @@
   // ---- UI: inject the Summarize button --------------------------------------
 
   function buttonHost() {
-    // Desktop: the owner row, so the chip sits right of Subscribe. (It used to
-    // go in the like/share cluster, but current layouts stretch injected
-    // children there into a full-width row of their own.) Fallbacks: the old
-    // action-row spots. Mobile: the slim action bar, before the like chip.
+    // Both platforms: the owner row, so the chip sits right of Subscribe.
+    // (It used to go in the like/share cluster, but desktop stretches injected
+    // children there into a full-width row, and mobile renders that strip
+    // ABOVE the channel row, so the chip looked like a stray line of its own.)
+    // Fallbacks: the old action-row spots.
     const owner = document.querySelector("ytd-watch-metadata #owner");
     if (owner) return { el: owner, place: "append" };
+    const mOwner = document.querySelector("ytm-slim-owner-renderer");
+    if (mOwner) return { el: mOwner, place: "append" };
     const el =
       document.querySelector("ytd-watch-metadata #actions #top-level-buttons-computed") ||
       document.querySelector("#actions #top-level-buttons-computed") ||
@@ -114,7 +117,16 @@
       btn.textContent = "Summarize";
     }
     btn.addEventListener("click", onSummarizeClick);
+    const mobileOwner = host.el.tagName?.toLowerCase() === "ytm-slim-owner-renderer";
+    if (mobileOwner) btn.classList.add("yapsum-btn-mrow"); // compact, matches the row's scale
     host.el[host.place](btn);
+    if (mobileOwner && buttonStyle === "text") {
+      // The mobile owner row is tight (avatar + name + Subscribe). If the full
+      // label overflows the row, collapse it to "Sum" rather than wrapping.
+      requestAnimationFrame(() => {
+        if (host.el.scrollWidth > host.el.clientWidth + 1) btn.textContent = "Sum";
+      });
+    }
   }
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
