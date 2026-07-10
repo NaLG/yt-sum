@@ -1,4 +1,4 @@
-# Return YouTube Summary — Privacy Policy
+# Return YouTube Summary Privacy Policy
 
 _Last updated: 2026-07-10. Publisher: **nalg**._
 
@@ -8,8 +8,8 @@ The only place your data goes is the LLM endpoint _you_ configure.**
 ## What Return YouTube Summary does
 
 Return YouTube Summary adds a "Summarize" button to YouTube watch pages. When you click it, the
-extension obtains the current video's transcript and sends it — with the video
-title — to the AI/LLM API endpoint you configured in the extension's settings,
+extension obtains the current video's transcript and sends it, with the video
+title, to the AI/LLM API endpoint you configured in the extension's settings,
 using the API key you supplied. The summary that comes back is shown in a panel
 on the page. Optional follow-up questions send your question plus the transcript
 and prior answers to the same endpoint.
@@ -52,16 +52,16 @@ data stays on your machine.
 
 ## Permissions, briefly
 
-- **Host access to `youtube.com` / `m.youtube.com`** — to add the button and read
+- **Host access to `youtube.com` / `m.youtube.com`**, to add the button and read
   the transcript of the page you're viewing.
-- **`webRequest`** — to read YouTube's own transcript/caption network responses
+- **`webRequest`**, to read YouTube's own transcript/caption network responses
   (the reliable way to obtain a transcript). Return YouTube Summary does not modify page content
   or intercept anything outside YouTube's transcript requests.
-- **Host access to the LLM API hosts, and optional access to other origins** —
+- **Host access to the LLM API hosts, and optional access to other origins**, 
   only so it can send your request to the endpoint you configure. The broad
   "any site" option is optional and used solely to allow a custom endpoint you
   enter yourself.
-- **`storage`** — to save your settings and key locally.
+- **`storage`**, to save your settings and key locally.
 
 ## Your control
 

@@ -1,13 +1,13 @@
 # Return YouTube Summary
 
-**The AI-summary button YouTube only *sometimes* gives you — made permanent, and
+**The AI-summary button YouTube only *sometimes* gives you, made permanent, and
 powered by your own LLM.** One click summarizes any video from its transcript, in
 Firefox on desktop **and Android**, using **your own** API key. No backend, no
-account, no tracking — the only thing that leaves your browser is the transcript
+account, no tracking. The only thing that leaves your browser is the transcript
 you send to the endpoint you chose.
 
 YouTube has been rolling out its own "Ask AI" / AI-summary feature, but it's an
-on-again/off-again experiment — present for some videos, some accounts, some
+on-again/off-again experiment, present for some videos, some accounts, some
 days, gone the next. This gives you that capability reliably, on every video,
 with the model *you* pick (including local models that never leave your machine).
 
@@ -24,7 +24,7 @@ with the model *you* pick (including local models that never leave your machine)
 ## How it works
 
 1. A content script on `youtube.com` / `m.youtube.com` injects a **Summarize**
-   button (the toolbar popup triggers the same flow — handy on Android).
+   button (the toolbar popup triggers the same flow, handy on Android).
 2. On click it obtains the transcript (see *Extraction* below) and hands it to the
    background script.
 3. The background script calls your configured LLM endpoint with your system
@@ -44,20 +44,20 @@ Configure in Settings. Two shapes cover essentially everything:
 > Why BYO key and not "sign in with your subscription"? As of 2026 Anthropic
 > **prohibits and server-side-blocks** third-party apps using Claude subscription
 > OAuth, and OpenAI's "Sign in with ChatGPT" is confined to their own products.
-> An API key is the only sanctioned path — and for summarization it's nearly free.
+> An API key is the only sanctioned path, and for summarization it's nearly free.
 
-## Extraction — the load-bearing design
+## Extraction, the load-bearing design
 
 Getting the transcript is the hard part, and the approach is **counter to most
 guides**. Empirically (mid-2026), the usual recipes fail:
 
-- **`timedtext`** (captionTracks baseUrl) is PoToken-gated — returns an **empty
+- **`timedtext`** (captionTracks baseUrl) is PoToken-gated, returns an **empty
   HTTP 200**.
 - **Reconstructing the `get_transcript` POST** returns **400 `failedPrecondition`**
-  everywhere — YouTube gates it on an attestation only its own player mints.
+  everywhere, YouTube gates it on an attestation only its own player mints.
 
 What works: **let YouTube's own player make the request, and capture its response
-at the network layer** with `webRequest.filterResponseData` in the background —
+at the network layer** with `webRequest.filterResponseData` in the background, 
 immune to page CSP and independent of how the transcript is rendered. Two sources
 are captured (keyed by video id): the classic panel's `get_transcript` JSON and
 the player's `/api/timedtext` caption track. On desktop the extension nudges the
@@ -84,7 +84,7 @@ npm run build                        # -> dist/<name>-<version>.zip
 ```
 
 Tests run the **real** source inside a normal Firefox via `web-ext` (never
-WebDriver — YouTube detects and blocks marionette) and relay results to a
+WebDriver, YouTube detects and blocks marionette) and relay results to a
 localhost server.
 
 ### Android (device or device-free emulator)
@@ -100,7 +100,7 @@ signing path.
 
 ## Publishing
 
-[SUBMISSION.md](SUBMISSION.md) is the AMO submission kit — listing copy, data
+[SUBMISSION.md](SUBMISSION.md) is the AMO submission kit, listing copy, data
 disclosure, reviewer notes, and the build/sign steps.
 
 ## Layout
@@ -124,4 +124,4 @@ scripts/                    android emulator + device launchers
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Copyright (c) 2026 nalg.
+MIT, see [LICENSE](LICENSE). Copyright (c) 2026 nalg.

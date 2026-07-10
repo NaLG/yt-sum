@@ -9,7 +9,7 @@
 //   - get_transcript: fired when the CLASSIC transcript panel opens.
 //   - /api/timedtext: fired whenever the player turns captions on. On the
 //     "PAmodern_transcript_view" A/B variant the panel uses get_panel (whose
-//     response carries NO segments — YouTube's own panel just spins), so the
+//     response carries NO segments, YouTube's own panel just spins), so the
 //     caption fetch is the only working source there. The content script can
 //     force it by toggling CC.
 // ============================================================================
@@ -32,7 +32,7 @@ dbg("background loaded; webRequest available", { has: typeof browser.webRequest?
 
 // The get_transcript request body carries a base64 `params` protobuf whose
 // first field is the 11-char video id. Decode it so captures are keyed by
-// video — this way an already-fetched transcript (opened before Summarize, or
+// video, this way an already-fetched transcript (opened before Summarize, or
 // preloaded) is matched without needing to re-open the panel.
 function videoIdFromParams(params) {
   try {
@@ -96,7 +96,7 @@ browser.webRequest.onBeforeRequest.addListener(
       details.requestId,
       (text) => {
         dbg("timedtext response", { bytes: text.length, videoId, first60: text.slice(0, 60) });
-        // Empty 200s are the PoToken-gated variant — the player retries with
+        // Empty 200s are the PoToken-gated variant, the player retries with
         // attestation; only keep bodies that actually contain caption events.
         // NEVER set lastCapture here: related-rail inline previews fetch
         // timedtext for OTHER videos all the time, and the un-keyed fallback
@@ -124,7 +124,7 @@ browser.webRequest.onBeforeRequest.addListener(
         bodyOk = true;
       }
     } catch {
-      /* no/unparseable body — fall back to lastCapture */
+      /* no/unparseable body, fall back to lastCapture */
     }
     dbg("get_transcript request seen", { videoId, bodyOk, method: details.method });
 
@@ -153,7 +153,7 @@ function getCapturedFor(videoId) {
   // Keyed entries stay valid until pruned (transcripts don't change).
   const byId = videoId && capturedByVideo.get(videoId);
   if (byId) return byId;
-  // Fallback (get_transcript only — see timedtext capture note): a very fresh
+  // Fallback (get_transcript only, see timedtext capture note): a very fresh
   // capture whose params we couldn't decode is almost certainly the one the
   // caller just triggered by opening the panel.
   if (lastCapture && Date.now() - lastCapture.at < 20000) return lastCapture;
@@ -166,7 +166,7 @@ function pruneCaptures() {
   for (const [k, v] of capturedByVideo) if (v.at < cutoff) capturedByVideo.delete(k);
 }
 
-// yap-sum background (event page) — runs the LLM call.
+// yap-sum background (event page), runs the LLM call.
 // Keeps the API key out of page context and centralizes provider logic.
 // Two provider shapes:
 //   - "openai": any OpenAI-compatible /v1/chat/completions endpoint
@@ -347,7 +347,7 @@ async function streamSummary(port, cfg, title, transcript) {
     const parts = splitTranscript(capped, cfg.chunkChars, cfg.maxChunks);
     const notes = [];
     for (let i = 0; i < parts.length; i++) {
-      port.postMessage({ type: "stage", text: `Long transcript — summarizing part ${i + 1}/${parts.length}…` });
+      port.postMessage({ type: "stage", text: `Long transcript, summarizing part ${i + 1}/${parts.length}…` });
       notes.push(
         await callLLM(cfg, PART_SYSTEM, [
           { role: "user", content: `Video title: ${title}\n\nTranscript PART ${i + 1} of ${parts.length} (timestamps in brackets):\n\n${parts[i]}` },

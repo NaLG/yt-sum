@@ -1,25 +1,25 @@
-# AMO submission kit — Return YouTube Summary
+# AMO submission kit for Return YouTube Summary
 
 Everything needed to submit a **listed** public release on addons.mozilla.org.
 Publisher/developer display name: **nalg**. Add-on name: **Return YouTube Summary**.
-(The internal manifest `id` stays `yap-sum@nalg.dev` — it's not user-visible and
+(The internal manifest `id` stays `yap-sum@nalg.dev`; it is not user-visible and
 must never change once published.)
 
 ## Listing copy (paste into the AMO submission form)
 
 - **Name:** Return YouTube Summary
 - **Summary** (≤250 chars): The AI-summary button YouTube only sometimes gives
-  you — made permanent, and powered by your own LLM key. One click summarizes any
+  you, made permanent, and powered by your own LLM key. One click summarizes any
   video from its transcript, with follow-up Q&A. No backend, no tracking; your
   data goes only to the provider you choose.
 - **Description:**
-  > YouTube has started rolling out its own "Ask AI" / AI-summary button — but
+  > YouTube has started rolling out its own "Ask AI" / AI-summary button, but
   > it's an on-again, off-again experiment: there for some videos, some accounts,
   > some days, and gone the next. Return YouTube Summary gives you that capability
-  > **reliably, on every video** — and puts *you* in control of the AI behind it.
+  > **reliably, on every video**, and puts *you* in control of the AI behind it.
   >
   > Click Summarize and it reads the current video's transcript and summarizes it
-  > through the LLM endpoint you configure with your own API key — so you choose
+  > through the LLM endpoint you configure with your own API key, so you choose
   > the model, the cost, and where your data goes. There is no developer server;
   > nothing is collected.
   >
@@ -53,12 +53,12 @@ transmitted to the developer; there is no backend.
 > Return YouTube Summary summarizes YouTube videos through a user-supplied LLM API key. No
 > developer server exists. Points a reviewer may want:
 >
-> 1. **Source is exactly as shipped.** No minifier, bundler, or transpiler — the
+> 1. **Source is exactly as shipped.** No minifier, bundler, or transpiler, the
 >    package is the `src/` folder zipped (`web-ext build`). Files are hand-written
 >    and readable; no build step is required to reproduce the artifact.
 > 2. **`webRequest` + `webRequestBlocking` on youtube.com** are used to READ
 >    YouTube's own transcript/caption responses (`/youtubei/v1/get_transcript`
->    and `/api/timedtext`) at the network layer — the only reliable way to obtain
+>    and `/api/timedtext`) at the network layer, the only reliable way to obtain
 >    a transcript, since the endpoints are gated behind an attestation only
 >    YouTube's player mints. The extension does not modify page content; it only
 >    forces `Accept-Encoding: identity` on those requests so the response can be
@@ -101,9 +101,9 @@ web-ext sign --api-key=<issuer> --api-secret=<secret> --channel=unlisted \
 
 ## Pre-submit checklist
 
-- [x] Final name applied — "Return YouTube Summary" (manifest, PRIVACY.md, this file)
-- [x] Icons added — 48/96/128/512 from the green TL;DW logo, referenced in manifest
+- [x] Final name applied, "Return YouTube Summary" (manifest, PRIVACY.md, this file)
+- [x] Icons added, 48/96/128/512 from the green TL;DW logo, referenced in manifest
 - [ ] `PRIVACY.md` hosted; URL in the listing
 - [ ] Version bumped; `web-ext lint` shows 0 errors
 - [ ] Screenshots attached
-- [x] License chosen — MIT (`LICENSE`)
+- [x] License chosen, MIT (`LICENSE`)

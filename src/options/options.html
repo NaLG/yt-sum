@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Return YouTube Summary — Settings</title>
+    <title>Return YouTube Summary Settings</title>
     <link rel="stylesheet" href="options.css" />
   </head>
   <body>
@@ -12,7 +12,7 @@
       <p class="sub">One-click YouTube summaries through your own LLM key. Nothing leaves your browser except the transcript you send to the endpoint you choose.</p>
 
       <div class="presets-bar">
-        <div class="presets-label">Quick setup — click a provider to fill the endpoint, then pick a model &amp; add your key:</div>
+        <div class="presets-label">Quick setup, click a provider to fill the endpoint, then pick a model &amp; add your key:</div>
         <div id="presetChips" class="preset-chips"></div>
       </div>
 
@@ -35,7 +35,7 @@
           Model
           <div class="model-row">
             <select id="modelSelect">
-              <option value="">— pick a model —</option>
+              <option value="">Pick a model…</option>
             </select>
             <button type="button" id="loadModels" title="Load this provider's live model list">↻ Load models</button>
           </div>
@@ -76,7 +76,7 @@
         <p id="status" class="status" aria-live="polite"></p>
       </form>
 
-      <p class="footnote">Local endpoints and non-listed hosts need host permission — it's requested the first time you save such a URL.</p>
+      <p class="footnote">Local endpoints and non-listed hosts need host permission. It's requested the first time you save such a URL.</p>
     </main>
     <script src="options.js"></script>
   </body>

@@ -24,7 +24,7 @@
   background: var(--yt-spec-badge-chip-background-hover, rgba(0, 0, 0, 0.1));
 }
 /* Fallback only for variants that expose no YouTube theme vars AND the OS is in
-   dark mode — keeps the pill legible instead of near-invisible dark-on-dark. */
+   dark mode, keeps the pill legible instead of near-invisible dark-on-dark. */
 @media (prefers-color-scheme: dark) {
   .yapsum-btn {
     background: var(--yt-spec-badge-chip-background, rgba(255, 255, 255, 0.1));

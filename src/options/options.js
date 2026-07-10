@@ -83,7 +83,7 @@ function fillModelList(ids) {
   sel.innerHTML = "";
   const placeholder = document.createElement("option");
   placeholder.value = "";
-  placeholder.textContent = ids.length ? "— pick a model —" : "— (click Load models) —";
+  placeholder.textContent = ids.length ? "Pick a model…" : "(click Load models)";
   sel.appendChild(placeholder);
   for (const id of ids) {
     const opt = document.createElement("option");
@@ -109,7 +109,7 @@ function syncModelSelect() {
 
 // Fetch the provider's live model catalog from {baseUrl}/models. Works for any
 // OpenAI-compatible endpoint (OpenRouter, GLM, Gemini, Groq, Ollama, LM Studio)
-// and for the native Anthropic API — both return { data: [{ id }] }.
+// and for the native Anthropic API, both return { data: [{ id }] }.
 async function loadModels(silent = false) {
   const provider = $("provider").value;
   const baseUrl = $("baseUrl").value.replace(/\/$/, "");
@@ -136,7 +136,7 @@ async function loadModels(silent = false) {
       .sort((a, b) => a.localeCompare(b));
     if (!ids.length) throw new Error("endpoint returned no models");
     fillModelList(ids);
-    if (!silent) setStatus(`Loaded ${ids.length} models — click the Model field to choose.`, "ok");
+    if (!silent) setStatus(`Loaded ${ids.length} models, click the Model field to choose.`, "ok");
   } catch (e) {
     // Fall back to curated suggestions so the dropdown still works.
     fillModelList(FALLBACK_MODELS[provider] || []);
@@ -229,7 +229,7 @@ async function testConnection() {
       body = { model, max_tokens: 16, messages: [{ role: "user", content: "Reply with OK." }] };
     }
     const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body) });
-    if (res.ok) setStatus("Connection OK — endpoint and key work.", "ok");
+    if (res.ok) setStatus("Connection OK, endpoint and key work.", "ok");
     else setStatus(`Endpoint returned ${res.status}: ${(await res.text()).slice(0, 200)}`, "err");
   } catch (e) {
     setStatus(`Failed: ${e.message}`, "err");

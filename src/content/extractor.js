@@ -1,19 +1,19 @@
-// yap-sum transcript extractor — runs in the YouTube page context.
+// yap-sum transcript extractor, runs in the YouTube page context.
 // No WebExtension APIs here: this file is loaded by the content script AND
 // injected verbatim by the test harnesses, so shipped code == tested code.
 //
 // Extraction strategy, in order (see README "Why this design"):
-//   1. DOM panel scrape — trigger YouTube's own "Show transcript" panel and read
+//   1. DOM panel scrape, trigger YouTube's own "Show transcript" panel and read
 //      the rendered segments. YouTube's app fetches the full transcript in one
 //      internal call (carrying the PoToken/attestation it generates itself) and
 //      renders every segment into the DOM. Proven to work even logged-out.
-//   2. get_transcript reconstruction — fast, no UI, but its precondition often
+//   2. get_transcript reconstruction, fast, no UI, but its precondition often
 //      fails outside a warmed/logged-in session; used as an opportunistic fast path.
-//   3. timedtext (captionTracks + fmt=json3) — legacy; increasingly PoToken-gated
+//   3. timedtext (captionTracks + fmt=json3), legacy; increasingly PoToken-gated
 //      (empty 200). Last resort.
 //
 // Empirical note (test/*.mjs): standalone reconstruction of get_transcript
-// returns 400 "failedPrecondition" even from the real page — YouTube gates it
+// returns 400 "failedPrecondition" even from the real page, YouTube gates it
 // on an attestation only its own app produces. So we let the app do the fetch
 // and scrape the result, rather than forging the request ourselves.
 
@@ -78,7 +78,7 @@
 
   // The transcript control varies by A/B variant and viewport: <button>,
   // yt-button-shape, [role=button], sometimes an <a>. aria-label match first
-  // (most precise), then short visible text ("Transcript" / "Show transcript") —
+  // (most precise), then short visible text ("Transcript" / "Show transcript"), 
   // the length guard keeps comment links etc. from matching.
   const BUTTONISH = "button, tp-yt-paper-button, yt-button-shape, ytd-button-renderer, [role=button], a";
   function findTranscriptButton() {
@@ -103,12 +103,12 @@
   // specific tag/class names we key on STRUCTURE: a transcript row is any
   // element that directly contains a timestamp-only child, followed by text.
   // We then keep the largest group of such rows sharing one parent (the
-  // transcript list). Reads whatever is already rendered — no panel toggling.
+  // transcript list). Reads whatever is already rendered, no panel toggling.
   // Find the transcript engagement panel specifically, so we never mistake
   // related-video durations or chapter markers for transcript rows.
   // Several transcript-ish containers can coexist (e.g. an empty
   // "PAmodern_transcript_view" stub next to the populated panel), so return
-  // ALL candidates — detectTranscript picks the one that actually has rows.
+  // ALL candidates, detectTranscript picks the one that actually has rows.
   function transcriptPanelCandidates() {
     const seen = new Set();
     const out = [];
@@ -130,7 +130,7 @@
   // Read whatever transcript rows are currently rendered inside the transcript
   // panel. Variant-proof: keys on structure (timestamp + text rows) rather than
   // tag/class names. Returns { segs, list, panel } or null. Returns null if the
-  // transcript panel isn't present/open — we do NOT scrape stray timestamps
+  // transcript panel isn't present/open, we do NOT scrape stray timestamps
   // elsewhere on the page.
   function detectTranscript() {
     let best = null;
@@ -149,7 +149,7 @@
     if (tsEls.length < 3) return null;
 
     // The list is the container with the most timestamp-bearing ROW children.
-    // Rows sit in their own wrappers, so grouping by immediate parent fails —
+    // Rows sit in their own wrappers, so grouping by immediate parent fails, 
     // walk up and credit each ancestor for the distinct child leading to a ts.
     const childRows = new Map();
     for (const ts of tsEls) {
@@ -315,7 +315,7 @@
       clientVersion: rx(text, /"INNERTUBE_CLIENT_VERSION":"([^"]+)"/),
       context: extractJsonObject(text, '"INNERTUBE_CONTEXT":'),
       params: jsonUnescape(rx(text, /"getTranscriptEndpoint":\s*\{"params":"([^"]+)"/)),
-      // Balanced parse — a lazy /\[.+?\}\]/ regex truncates when a track's
+      // Balanced parse, a lazy /\[.+?\}\]/ regex truncates when a track's
       // name uses runs (nested "}]"), as the mobile player response does.
       captionTracks: extractJsonArray(text, '"captionTracks":'),
     };
@@ -330,10 +330,10 @@
     try {
       const res = await fetch(`${location.origin}/watch?v=${videoId}`, { credentials: "include" });
       fetched = bootstrapFromText(await res.text());
-    } catch { /* offline/refused — the DOM bootstrap is all we have */ }
+    } catch { /* offline/refused, the DOM bootstrap is all we have */ }
     if (!fetched) return domBoot;
     // Per-field merge: the refetched page (m.youtube.com especially) can be a
-    // JS shell MISSING fields the live DOM already has — never erase those.
+    // JS shell MISSING fields the live DOM already has, never erase those.
     return {
       apiKey: fetched.apiKey || domBoot.apiKey,
       clientVersion: fetched.clientVersion || domBoot.clientVersion,
@@ -376,7 +376,7 @@
         .map((e) => ({ startMs: Number(e.tStartMs || 0), text: e.segs.map((s) => s.utf8 || "").join("").replace(/\n/g, " ") }))
         .filter((s) => s.text.trim());
       return segments.length ? segments : null;
-    } catch { /* not JSON — try XML */ }
+    } catch { /* not JSON, try XML */ }
     try {
       const doc = new DOMParser().parseFromString(text, "text/xml");
       const segments = Array.from(doc.querySelectorAll("text"))

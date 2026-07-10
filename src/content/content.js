@@ -1,4 +1,4 @@
-// yap-sum content orchestrator — runs on youtube.com/m.youtube.com.
+// yap-sum content orchestrator, runs on youtube.com/m.youtube.com.
 // Responsibilities: detect watch pages, inject the Summarize button, and on
 // click run extraction -> LLM -> render. Also a self-test hook for the
 // automated test loop (web-ext run) that reports extraction results to console.
@@ -21,7 +21,7 @@
   // ---- self-test hook (used by test/webext-validate.mjs) --------------------
   // Loading a watch URL with #yapsum-selftest makes the content script run the
   // extractor immediately and print a tagged, machine-readable line to the
-  // page console — which `web-ext run` streams to stdout. This is our
+  // page console, which `web-ext run` streams to stdout. This is our
   // non-automated (non-WebDriver) validation of the extraction pathway.
   async function runSelfTest() {
     const started = Date.now();
@@ -102,7 +102,7 @@
   const captureFor = async (videoId) =>
     (await browser.runtime.sendMessage({ type: "getCaptured", videoId }))?.capture;
   // A capture is either the classic panel's get_transcript JSON or the player's
-  // own caption-track fetch (timedtext) — parse whichever we got.
+  // own caption-track fetch (timedtext), parse whichever we got.
   const parseCapture = (cap) =>
     !cap ? null
     : cap.kind === "timedtext" ? NS.parseTimedtextBody(cap.text)
@@ -116,7 +116,7 @@
     clog("start", { videoId, url: location.href });
     await browser.runtime.sendMessage({ type: "armCapture" }).catch(() => {});
 
-    // 1. Already captured passively (the player fetched it — user opened the
+    // 1. Already captured passively (the player fetched it, user opened the
     //    transcript or had captions on earlier, or a prior visit). No UI.
     let cap = await captureFor(videoId).catch(() => null);
     clog("passive capture?", { hit: !!cap, kind: cap?.kind });
@@ -126,7 +126,7 @@
     }
 
     // 2. Transcript already rendered on the page (you had it open)? Read it
-    //    directly — variant-proof, and scrolls the (virtualized) panel to get
+    //    directly, variant-proof, and scrolls the (virtualized) panel to get
     //    every row, restoring scroll position after. No network needed.
     if (NS.scrapeVisibleTranscript()) {
       const segs = await NS.scrapeTranscriptFull();
@@ -140,7 +140,7 @@
     // 2.5 Mobile: the m.youtube.com player doesn't fetch the transcript/caption
     //     track until playback begins. onSummarizeClick already kicked playback
     //     MUTED *synchronously* within the tap gesture (autoplay policy rejects
-    //     play() once we've awaited anything — the bug that made this silently
+    //     play() once we've awaited anything, the bug that made this silently
     //     do nothing). Here we just poll for the capture that playback triggers;
     //     the video is paused/restored back in onSummarizeClick's finally.
     if (!cap && location.hostname === "m.youtube.com" && mobilePlayback) {
@@ -159,7 +159,7 @@
     // 3. Caption-toggle trigger: flick CC on so the player fetches its own
     //    caption track (an attested request we capture at the network layer),
     //    then restore the previous CC state. Much subtler than opening the
-    //    panel — and the ONLY working source on the "PAmodern" panel variant,
+    //    panel, and the ONLY working source on the "PAmodern" panel variant,
     //    where YouTube's own transcript panel spins forever (its get_panel
     //    response carries no segments).
     const ccBtn = document.querySelector(".ytp-subtitles-button");
@@ -189,7 +189,7 @@
     clog("last-resort open", { opened, openErr });
     // The "PAmodern_transcript_view" variant never renders rows (its get_panel
     // response has no segments) and only fires the capturable timedtext fetch
-    // ~10s AFTER a close/reopen — so nudge it and wait the fetch out (~40s).
+    // ~10s AFTER a close/reopen, so nudge it and wait the fetch out (~40s).
     const modernPanel = () => document.querySelector('[target-id*="PAmodern" i]');
     let retoggles = 0;
     for (let i = 0; i < 130; i++) {
@@ -210,7 +210,7 @@
         await sleep(400);
         try { await NS.openTranscriptPanel(); } catch {}
       }
-      // Non-modern variants resolve (or fail) fast — keep the old 12s budget.
+      // Non-modern variants resolve (or fail) fast, keep the old 12s budget.
       if (!modernPanel() && i >= 40) break;
     }
     NS.closeTranscriptPanel();
@@ -232,7 +232,7 @@
     const btn = NS.findTranscriptButton?.() || null;
 
     // If scraping missed, dump a sample of elements whose text starts with a
-    // timestamp — that reveals the actual transcript-row markup of this variant.
+    // timestamp, that reveals the actual transcript-row markup of this variant.
     const tsSamples = [];
     for (const el of document.querySelectorAll("*")) {
       if (tsSamples.length >= 4) break;
@@ -269,7 +269,7 @@
   // Mobile playback nudge. MUST be kicked synchronously from the click handler:
   // the m.youtube.com player only fetches the transcript once playback starts,
   // and the browser only permits video.play() while the tap gesture is still
-  // active — which it ISN'T after getTranscript's first await. So we start it
+  // active, which it ISN'T after getTranscript's first await. So we start it
   // here (muted) and restore the video afterward (see onSummarizeClick).
   let mobilePlayback = null;
   function kickMobilePlayback() {
@@ -296,13 +296,13 @@
     const panel = openPanel();
     panel.classList.remove("yapsum-collapsed"); // re-summarizing always expands
     setPanel(panel, "Fetching transcript…");
-    kickMobilePlayback(); // synchronous — MUST stay before the first await below
+    kickMobilePlayback(); // synchronous, MUST stay before the first await below
     let transcript;
     try {
       transcript = await getTranscript();
     } catch (e) {
       // m.youtube.com exposes NO transcript surface at all (no panel UI, no
-      // getTranscriptEndpoint, PoToken-gated timedtext — see test/probe-mobile.mjs).
+      // getTranscriptEndpoint, PoToken-gated timedtext, see test/probe-mobile.mjs).
       // The desktop site inside Firefox for Android works fully.
       const hint = location.hostname === "m.youtube.com"
         ? "\n\nYouTube's mobile site doesn't expose transcripts. Tap the ⋮ menu and choose \"Desktop site\", then try again."
@@ -361,7 +361,7 @@
       input.disabled = btn.disabled = true;
       const qEl = document.createElement("p");
       qEl.className = "yapsum-qa-q";
-      qEl.textContent = question; // textContent only — injection-safe
+      qEl.textContent = question; // textContent only, injection-safe
       const aEl = document.createElement("div");
       aEl.className = "yapsum-qa-a";
       aEl.textContent = "…";
@@ -504,10 +504,10 @@
     bar.className = "yapsum-panel-bar";
     // Title is the collapse/expand toggle: tapping it folds the panel to a
     // compact bar at the bottom (summary + Q&A preserved, so re-opening is
-    // instant — no re-fetch). Only ✕ removes it (then Summarize rebuilds).
+    // instant, no re-fetch). Only ✕ removes it (then Summarize rebuilds).
     const title = document.createElement("span");
     title.className = "yapsum-panel-title";
-    title.textContent = "Return YouTube Summary";
+    title.textContent = "TL;DW";
     title.title = "Collapse / expand";
     title.addEventListener("click", () => panel.classList.toggle("yapsum-collapsed"));
     const close = document.createElement("button");
@@ -556,7 +556,7 @@
         try { ok = document.execCommand("copy"); } catch {}
         ta.remove();
       }
-      btn.textContent = ok ? "Copied ✓ — paste it to the developer" : "Copy failed — see console";
+      btn.textContent = ok ? "Copied ✓, paste it to the developer" : "Copy failed, see console";
     });
     body.appendChild(btn);
   }
@@ -582,14 +582,14 @@
   window.addEventListener("yt-page-data-updated", ensureButton);
   document.addEventListener("yt-navigate-finish", onNavigate);
 
-  // Popup (browser action) can trigger a summary — the Android entry point.
+  // Popup (browser action) can trigger a summary, the Android entry point.
   browser.runtime.onMessage.addListener((msg) => {
     if (msg?.type === "yapsum-summarize") onSummarizeClick();
   });
 
   // YouTube's polymer app rebuilds the actions row on navigation and during
   // hydration, wiping injected nodes. A MutationObserver re-adds the button
-  // whenever it goes missing — more robust than a one-shot poll.
+  // whenever it goes missing, more robust than a one-shot poll.
   const observer = new MutationObserver(() => ensureButton());
   observer.observe(document.documentElement, { childList: true, subtree: true });
   ensureButton();
