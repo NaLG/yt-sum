@@ -137,31 +137,22 @@
     }
     clog("scrape visible?", { segments: 0 });
 
-    // 2.5 Playback trigger (mobile). The m.youtube.com player doesn't fetch the
-    //     transcript/caption track until playback begins — so a cold Summarize
-    //     finds nothing, but "play, then Summarize" works. We kick playback
-    //     MUTED (the Summarize tap is the user gesture that permits play()),
-    //     wait for the capture, then restore the video exactly as we found it
-    //     (paused, same position, same mute state) — no real autoplay, no sound.
-    if (!cap && location.hostname === "m.youtube.com") {
-      const v = document.querySelector("video");
-      if (v) {
-        const wasPaused = v.paused, wasMuted = v.muted, pos = v.currentTime;
-        clog("playback trigger", { wasPaused, pos: Math.round(pos) });
-        try { v.muted = true; const p = v.play(); if (p && p.catch) p.catch(() => {}); } catch {}
-        for (let i = 0; i < 25 && !cap; i++) {
-          await sleep(300);
-          cap = await captureFor(videoId).catch(() => null);
-        }
-        try {
-          if (wasPaused) { v.pause(); v.currentTime = pos; } // we started it → undo
-          v.muted = wasMuted;
-        } catch {}
-        if (cap) {
-          const segs = parseCapture(cap);
-          clog("playback capture", { kind: cap.kind, segs: segs ? segs.length : 0 });
-          if (segs) return result(videoId, methodOf(cap), segs, started);
-        }
+    // 2.5 Mobile: the m.youtube.com player doesn't fetch the transcript/caption
+    //     track until playback begins. onSummarizeClick already kicked playback
+    //     MUTED *synchronously* within the tap gesture (autoplay policy rejects
+    //     play() once we've awaited anything — the bug that made this silently
+    //     do nothing). Here we just poll for the capture that playback triggers;
+    //     the video is paused/restored back in onSummarizeClick's finally.
+    if (!cap && location.hostname === "m.youtube.com" && mobilePlayback) {
+      clog("mobile: awaiting playback-triggered capture", { playing: !mobilePlayback.v.paused });
+      for (let i = 0; i < 50 && !cap; i++) { // ~15s
+        await sleep(300);
+        cap = await captureFor(videoId).catch(() => null);
+      }
+      if (cap) {
+        const segs = parseCapture(cap);
+        clog("mobile playback capture", { kind: cap.kind, segs: segs ? segs.length : 0 });
+        if (segs) return result(videoId, methodOf(cap), segs, started);
       }
     }
 
@@ -275,10 +266,37 @@
     };
   }
 
+  // Mobile playback nudge. MUST be kicked synchronously from the click handler:
+  // the m.youtube.com player only fetches the transcript once playback starts,
+  // and the browser only permits video.play() while the tap gesture is still
+  // active — which it ISN'T after getTranscript's first await. So we start it
+  // here (muted) and restore the video afterward (see onSummarizeClick).
+  let mobilePlayback = null;
+  function kickMobilePlayback() {
+    mobilePlayback = null;
+    if (location.hostname !== "m.youtube.com") return;
+    const v = document.querySelector("video");
+    if (!v) return;
+    mobilePlayback = { v, wasPaused: v.paused, pos: v.currentTime, muted: v.muted };
+    if (v.paused) {
+      try { v.muted = true; const p = v.play(); if (p && p.catch) p.catch(() => {}); } catch {}
+    }
+  }
+  function restoreMobilePlayback() {
+    const m = mobilePlayback;
+    mobilePlayback = null;
+    if (!m) return;
+    try {
+      if (m.wasPaused) { m.v.pause(); m.v.currentTime = m.pos; } // we started it → undo
+      m.v.muted = m.muted;
+    } catch {}
+  }
+
   async function onSummarizeClick() {
     const panel = openPanel();
     panel.classList.remove("yapsum-collapsed"); // re-summarizing always expands
     setPanel(panel, "Fetching transcript…");
+    kickMobilePlayback(); // synchronous — MUST stay before the first await below
     let transcript;
     try {
       transcript = await getTranscript();
@@ -291,6 +309,8 @@
         : "";
       await showError(panel, `Couldn't get a transcript for this video.${hint}\n\n${e.message}`);
       return;
+    } finally {
+      restoreMobilePlayback(); // pause + rewind the video we nudged, always
     }
     setPanel(panel, `Transcript ready (${transcript.segments.length} lines). Summarizing…`);
     const body = panel.querySelector(".yapsum-panel-body");
