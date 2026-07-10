@@ -33,7 +33,7 @@ Publisher/developer display name: **nalg**.
 - **Support / homepage:** the GitHub repository (publisher **nalg**).
 - **Privacy policy:** host `PRIVACY.md` (e.g. in the GitHub repo) and paste its
   URL into the "Privacy policy" field, or paste the text directly.
-- **License:** _(choose one — MIT is a sensible default for a resume project.)_
+- **License:** MIT (see `LICENSE`).
 
 ## Data collection disclosure (must match the manifest)
 
@@ -105,4 +105,4 @@ web-ext sign --api-key=<issuer> --api-secret=<secret> --channel=unlisted \
 - [ ] `PRIVACY.md` hosted; URL in the listing
 - [ ] Version bumped; `web-ext lint` shows 0 errors
 - [ ] Screenshots attached
-- [ ] License chosen
+- [x] License chosen — MIT (`LICENSE`)
