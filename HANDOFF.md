@@ -1,132 +1,129 @@
-# yap-sum, Handoff notes
+# Return YouTube Summary, project status and handoff
 
-Firefox extension (MV2, desktop + Android): one-click **AI summaries of YouTube
-videos** using the user's **own LLM API key**. Repo: `/Users/clawd/repos/yap-sum`.
+Resume-here doc. If the session dropped, this plus `SUBMISSION.md` is everything
+needed to finish. No em-dashes anywhere in this project (deliberate style choice).
 
-**Auth: BYO API key only, no OAuth.** Anthropic (and OpenAI) block third-party
-apps from using subscription login for inference, settled, don't revisit.
+## What this is
 
-## Current state (v0.3.0, 2026-07-10)
+Firefox extension (MV2, desktop and Android) that adds a **Summarize** button to
+YouTube and summarizes the current video's transcript through the user's **own**
+LLM API key. No backend, no tracking.
 
-- **CONFIRMED WORKING by the user on desktop with a real key (Gemini).**
-- **Works & tested end-to-end (mock LLM):** button injection; transcript via
-  network intercept, BOTH `get_transcript` (classic panel) AND
-  **`/api/timedtext` (caption-track) capture**; OpenAI-compatible + Anthropic
-  SSE streaming; markdown→rich-text panel (injection-safe); options page;
-  **long-transcript chunking** (map-reduce: per-part notes → synthesis, with
-  "part i/N" progress in the panel; `chunkChars` default 100k, `maxChunks` 10,
-  0 disables); **follow-up Q&A field** under the summary (sends transcript +
-  summary + prior turns; streamed markdown answers; YouTube hotkeys shielded).
-- The formerly failing videos (`31MvP7yHzxM`, `tVnOfWW89pA`) pass
-  `test/smoke-full.mjs`, root cause was the "PAmodern" panel variant (below).
-- **Android:** device-free emulator loop DONE (`npm run emulator` →
-  `npm run test:android`). Extraction verified in Fenix 152 on the emulator
-  (desktop-site UA). m.youtube.com itself has NO transcript surface, mobile
-  users need "Request desktop site" (content.js shows that hint on failure).
-- **Pending:** AMO unlisted signing (the path to REAL Android installs, Fenix
-  has no about:debugging and strips webRequest from temp add-ons). After that:
-  hidden desktop-iframe extraction on m.youtube.com (user-approved backlog
-  idea: iframe the desktop watch page invisibly, strip X-Frame-Options +
-  frame-scoped desktop UA via webRequest, existing intercept captures the
-  transcript, summary renders in our own mobile panel, no overlay needed).
+- **Product name:** Return YouTube Summary. **Short mark (icon + panel header):** TL;DW.
+- **Publisher/display name:** nalg (their GitHub name). **License:** MIT.
+- **Repo:** github.com/NaLG/yt-sum (branch: master).
+- **Internal ids that must NEVER change:** manifest `gecko.id` = `yap-sum@nalg.dev`,
+  CSS `.yapsum-*` classes, storage keys, and the local dir / npm name `yap-sum`.
+  Only the user-facing display strings are "Return YouTube Summary" / "TL;DW".
 
-## Transcript extraction (the expensive lessons, keep ALL of this)
+## Current state: v0.4.1, working
 
-YouTube gates transcript endpoints behind attestation/PoTokens only its own
-player can mint. Established empirically (mid-2026):
+Verified end-to-end on desktop (real key, user-confirmed) and via the mock-LLM
+smoke tests. Features: one-click Summarize; transcript via network intercept
+(get_transcript + timedtext capture); OpenAI-compatible + native Anthropic with
+SSE streaming; follow-up Q&A; long-video chunking (map-reduce); collapsible panel
+(tap TL;DW header to fold to a bottom bar, summary preserved); native tonal-chip
+button styling; visible API key with Show/Hide toggle. Lint 0 errors; all smokes
+pass. Icons: green TL;DW mark at 48/96/128/512.
 
-- **Reconstructing `get_transcript` → 400. Fetching `timedtext` ourselves →
-  empty 200. Both dead in every environment.** The ONLY working approach:
-  trigger the player/panel and **capture its own requests at the network layer**
-  (`webRequest.filterResponseData` in the background).
-- **Two capturable sources** (both keyed by videoId, `capturedByVideo`):
-  1. `get_transcript` JSON, fired when the CLASSIC transcript panel opens.
-  2. `/api/timedtext`, the player's caption-track fetch (full track in ONE
-     response, json3). Parsed by `NS.parseTimedtextBody` (json3 + srv XML).
-- **"PAmodern_transcript_view" A/B variant** (the user's failing videos):
-  "Show transcript" opens a panel that NEVER populates, its `get_panel`
-  response carries no segments and YouTube's own UI spins forever. No
-  `get_transcript` is ever fired. BUT ~10s after a panel **close/reopen** the
-  player fetches the full `timedtext`, content.js nudges the panel (max 2×)
-  and polls captures up to ~40s (`modernPanel()` in content.js).
-- **lastCapture fallback is get_transcript-ONLY.** Related-rail inline previews
-  fetch timedtext for OTHER videos constantly; an un-keyed fallback served a
-  preview's captions as the current video's transcript (subtle wrong-output bug).
-- **Panel/button detection must be structure-based and multi-candidate:**
-  transcript button can be `button`/`yt-button-shape`/`[role=button]`/`a`
-  (aria-label first, then short text); several `[target-id*=transcript]`
-  containers can coexist (empty PAmodern stub + populated classic), scan ALL
-  candidates and keep the one with rows.
-- **captionTracks parsing needs balanced-bracket extraction**, the lazy regex
-  truncated on `name.runs` (nested `}]`), which the mobile player response uses.
-  `getBootstrap` must per-field MERGE DOM + refetched bootstraps (the refetched
-  m.youtube page is a JS shell that would erase DOM-found fields).
-- **MV2 + blocking webRequest needs `persistent: true`** (manifest changed).
-- **Env facts:** WebDriver is detected by YouTube (use `web-ext`, never
-  geckodriver). Fresh test profiles often have CC on by default → passive
-  timedtext capture at page load (why smoke runs report `captions-intercept`).
+### One thing still needing a real-device confirm
 
-## Android (device-free loop, WORKING)
+The **mobile playback nudge** (v0.4.1). On m.youtube.com the player only fetches
+the transcript once playback starts, so a cold Summarize found nothing. Fix: on
+tap we start playback muted **synchronously within the click gesture** (a later
+play() is rejected by autoplay policy once we have awaited anything), capture the
+transcript, then pause and rewind the video. Desktop is unaffected (hostname
+gated). The emulator was too ANR-unstable to auto-confirm; it rests on the user's
+manual repro ("play then Summarize works") which this automates. Test on a real
+phone: a video that failed cold should now summarize without pressing play first.
 
-- `npm run emulator` (scripts/android-emulator.sh): boots headless AVD
-  (android-35 google_apis arm64, `adb root` works), installs Fenix 152 release,
-  enables Remote Debugging by editing `fenix_preferences.xml` as root (no UI!),
-  sets `open_links_in_apps=never`, disables the YouTube app, and writes
-  `general.useragent.override` (desktop UA) into the Gecko profile's user.js.
-- `npm run test:android` then validates real extraction in Fenix.
-- **Gotchas:** web-ext's `--start-url` is unsupported on Android, the harness
-  fires a VIEW intent after "Installed ... as a temporary add-on" appears.
-  **Fenix strips API permissions (webRequest!) from TEMPORARY add-ons** (host
-  origins survive), so the intercept path can't be harness-tested on Android;
-  panel-scrape is what validates there. Real (signed/AMO) installs get the
-  permission prompt → webRequest works. `adb` from the homebrew cask hangs at
-  exec on this Mac, use the SDK's platform-tools (android-env.sh handles it).
-- m.youtube.com probes: `test/probe-mobile.mjs` (markup/anchors/timedtext),
-  `test/probe-desktop.mjs` (PAmodern timeline + network capture). Keep both, 
-  they're the discovery tools for the next YouTube variant.
-
-## Files
-
-- `src/content/extractor.js`, page-context transcript logic (no WebExtension
-  APIs; test-importable). `globalThis.yapSum`: extract/scrape/panel helpers +
-  `parseTimedtextBody`/`parseGetTranscriptJson`/`findTranscriptButton`.
-- `src/content/content.js`, `getTranscript()` flow: passive capture → visible
-  scrape → CC-toggle trigger → panel open (+PAmodern nudge) → network fallbacks.
-  Button injection, `renderMarkdown` (injection-safe), error panel + Copy debug
-  info (+ "Request desktop site" hint on m.youtube.com).
-- `src/background/background.js`, get_transcript + timedtext intercepts
-  (`collectBody`), `callLLM` (SSE over runtime port), chunked `streamSummary`
-  (map-reduce) + `streamFollowup`, `getDebug` ring buffer.
-- `scripts/android-env.sh`, `scripts/android-emulator.sh`, the Android loop.
-- `src/options/`, settings page + toolbar popup.
-
-## Build / test / ship
+## Getting a build
 
 ```
-npm run build                      # -> dist/yap-sum-0.3.0.zip
-node test/smoke-full.mjs [VIDEO]   # AUTHORITATIVE full path incl. follow-up Q&A
-YAPSUM_CHUNK=1 node test/smoke-full.mjs   # chunked map-reduce mode (tiny chunks)
-node test/smoke-full.mjs 31MvP7yHzxM   # the PAmodern regression
-node test/webext-validate.mjs      # extractor-only (desktop); PAmodern videos
-                                   #   FAIL here by design (need bg intercept)
-npm run emulator && npm run test:android   # Android loop
-web-ext lint --source-dir src      # 0 errors (4 min-version warnings, benign)
+npm run build      # -> dist/return_youtube_summary-<ver>.zip  (UNSIGNED; same package for desktop + Android)
+# Private sideload copy (your phone / sharing), NOT for the public listing:
+web-ext sign --api-key=<issuer> --api-secret=<secret> --channel=unlisted --source-dir src --artifacts-dir dist
 ```
 
-**User loads it** (they SSH in, run Firefox on their own machine): `scp` the zip
-→ `about:debugging` → Load Temporary Add-on. Update = rebuild, overwrite zip,
-**Reload** in about:debugging.
+- Desktop testing: `about:debugging` , Load Temporary Add-on , pick the zip.
+- Android: signed install via the debug-menu "Install extension from file". See
+  `MOBILE-TESTING.md` (release Firefox needs the signed xpi; the debug menu is
+  unlocked by tapping the logo in About).
+- `dist/` is gitignored, so builds live only on the build machine (scp them down).
 
-## Next
+## NEXT: publish to AMO (public listing). Steps remaining, all on the user side
 
-1. Hand v0.3.0 to the user (chunking + follow-up Q&A are new since their
-   confirmed-working v0.2.0).
-2. AMO unlisted signing (free account + API keys; `web-ext sign`) → real
-   Android installs. 3. Then the hidden desktop-iframe mobile idea (task #6).
+Full listing copy + reviewer notes are in `SUBMISSION.md`. Short version:
 
-## Working rule
+1. **Account prep:** addons.mozilla.org , sign in , enable **2FA** (required) ,
+   accept the one-time Add-on Distribution Agreement.
+2. **Listed vs unlisted:** the public listing is a DIFFERENT upload from the
+   `web-ext sign --channel=unlisted` xpi. For the listing you upload the
+   **UNSIGNED build zip** through the Developer Hub and Mozilla signs it after
+   review. The unlisted xpi is only the private sideload copy.
+3. **Developer Hub , Submit a New Add-on , "On this site" (listed) , upload
+   `dist/return_youtube_summary-<ver>.zip`.** Automated validation runs (passes).
+4. **Fill the listing** from `SUBMISSION.md`: name (Return YouTube Summary),
+   summary, description, category (Search Tools), tags, license (MIT),
+   **screenshots** (user is gathering: button in the action row, settings page,
+   and a real summary using their own key; a fall-of-Rome doc was suggested as
+   generically safe), and the **Notes to reviewer** block (justifies webRequest,
+   persistent background, optional host permission, and the anthropic header).
+5. **Privacy policy:** easiest is to paste `PRIVACY.md` text into the form's
+   privacy-policy field (no hosting needed). Or make the repo public and link it.
+6. **Submit for review** (automated + possibly human, a few days). Likely
+   reviewer questions (webRequest use; "YouTube" in the name) are pre-answered in
+   the reviewer notes. Precedent for the name: "Return YouTube Dislike" is listed.
 
-Don't hand the user a build without a test reproducing their actual scenario.
-They dislike visual noise, capture passively where possible; the CC toggle and
-panel nudge are the accepted minimum. Headless Firefox is unreliable for
-scrape/scroll testing; the intercept path IS testable, lean on it + probes.
+**Version-uniqueness gotcha:** AMO requires each version number to be unique per
+add-on id. If 0.4.1 was already `web-ext sign`ed (unlisted), the listed upload of
+0.4.1 will be rejected as a duplicate. In that case bump to 0.4.2 and rebuild
+before uploading (change `version` in `src/manifest.json` and `package.json`).
+
+## Open work (tracked as tasks in-session)
+
+- Confirm the v0.4.1 mobile playback fix on a real phone (above).
+- Fit the Summarize button inline on mobile (currently makes its own row);
+  needs on-device iteration.
+- Mobile fallback for videos that yield nothing even with playback: Tier 1
+  (playback nudge) shipped; Tier 2 is a hidden desktop iframe of the watch page
+  (strip X-Frame-Options, frame-scoped desktop UA, capture via existing
+  intercept), to build after signing. Needed because the transcript is
+  attestation-gated, so a plain background fetch cannot mint the token.
+
+## Test and verify
+
+```
+node test/smoke-full.mjs [VIDEO_ID]      # authoritative: click , extract , (mock LLM) , summary , follow-up , collapse
+YAPSUM_CHUNK=1 node test/smoke-full.mjs  # long-video chunking path
+node test/smoke-options.mjs              # settings page
+node test/smoke-ui.mjs                   # button injection
+npm run emulator && npm run test:android # device-free Android
+web-ext lint --source-dir src            # 0 errors (4 benign min-version warnings)
+```
+
+Tests run the real source inside a normal Firefox via `web-ext` (never
+WebDriver; YouTube detects and blocks marionette).
+
+## Repo push gotcha (important)
+
+Origin is `git@github.com:NaLG/yt-sum.git`. The repo's `git config
+core.sshCommand` forces the yt-sum deploy key (`~/.ssh/deploy_key_yt-sum`) and
+bypasses the ssh-agent, which otherwise shadows it with another repo's key
+(github then denies the push, reporting the wrong repo). With that config, plain
+`git push` works. To verify the right identity:
+`GIT_SSH_COMMAND="ssh -i ~/.ssh/deploy_key_yt-sum -o IdentitiesOnly=yes -o IdentityAgent=none" ssh -T git@github.com`
+should say "Hi NaLG/yt-sum!".
+
+## Extraction: the hard-won lessons (do not relearn these)
+
+See README "Extraction" and the code comments. In short: reconstructing
+`get_transcript` returns 400 and fetching `timedtext` ourselves returns an empty
+200 (both attestation/PoToken gated). The only reliable path is to let YouTube's
+own player make the request and capture the response at the network layer
+(`webRequest.filterResponseData`), keyed by video id. Two sources: the classic
+panel's `get_transcript` JSON and the player's `/api/timedtext` caption track.
+Desktop nudges the panel/CC to fire it; mobile needs playback (above). Fallbacks:
+DOM-panel scrape, reconstruction, timedtext. The "PAmodern" A/B panel never
+populates (its get_panel has no segments) and only fires timedtext ~10s after a
+close/reopen, which content.js handles.
