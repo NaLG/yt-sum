@@ -1,39 +1,29 @@
 # Return YouTube Summary
 
-**The AI-summary button YouTube only *sometimes* gives you, made permanent, and
-run on your own key.** One click summarizes any video from its transcript, in
-Firefox on desktop **and Android**, using **your own** API key. No backend, no
+YouTube has been rolling out its own "Ask AI" / AI-summary feature, but it's an
+on-again/off-again feature, present for some videos, some accounts, some
+days, gone the next. This gives you that capability reliably, on every video.
+
+One click summarizes any video from its transcript, in
+Firefox on desktop and Android, using your own API key. No backend, no
 account, no tracking. The only thing that leaves your browser is the transcript
 you send to the endpoint you chose.
 
-YouTube has been rolling out its own "Ask AI" / AI-summary feature, but it's an
-on-again/off-again experiment, present for some videos, some accounts, some
-days, gone the next. This gives you that capability reliably, on every video,
-with the model *you* pick (including local models that never leave your machine).
 
 ## Features
 
-- **One-click Summarize** button in YouTube's action row (desktop and mobile).
-- **Bring your own key:** any OpenAI-compatible endpoint, native Anthropic, or a
+- **One-click Summarize** button in YouTube's action row.
+- **Bring your own key:** any OpenAI-compatible endpoint, eg OpenRouter/z.ai, or a
   local model (Ollama / LM Studio).
 - **Follow-up Q&A:** ask questions about the video, based on its transcript.
 - **Long videos** are summarized in parts, then combined into one.
 - **Collapsible panel:** fold the result to a bottom bar and reopen it instantly.
 - **Safe rendering:** summaries are formatted via `textContent`, never raw HTML.
 
-## How it works
-
-1. A content script on `youtube.com` / `m.youtube.com` injects a **Summarize**
-   button (the toolbar popup triggers the same flow, handy on Android).
-2. On click it obtains the transcript (see *Extraction* below) and hands it to the
-   background script.
-3. The background script calls your configured LLM endpoint with your system
-   prompt and streams the summary into an in-page panel.
+## Providers (BYOK)
 
 Your API key lives in `storage.local` and is only ever sent to the endpoint you
 choose. See [PRIVACY.md](PRIVACY.md).
-
-## Providers (bring your own key)
 
 Configure in Settings. Two shapes cover essentially everything:
 
@@ -41,12 +31,11 @@ Configure in Settings. Two shapes cover essentially everything:
   (OpenAI-compat endpoint), OpenRouter, Groq, and local **Ollama** / **LM Studio**.
 - **Anthropic** (native `/v1/messages`): Claude models directly.
 
-> Why BYO key and not "sign in with your subscription"? As of 2026 Anthropic
-> **prohibits and server-side-blocks** third-party apps using Claude subscription
-> OAuth, and OpenAI's "Sign in with ChatGPT" is confined to their own products.
-> An API key is the only sanctioned path, and for summarization it's nearly free.
+> Why BYO key and not "sign in with your subscription"?  Because we're all tired and sick of Subscription culture.  Stop paying for Subscriptions.  Pay only pennies for the inference/hardware required, let software be free.
 
-## Extraction, the load-bearing design
+## Technical details on Extraction
+
+(Full details in XYZ.md)
 
 Getting the transcript is the hard part, and the approach is **counter to most
 guides**. Empirically (mid-2026), the usual recipes fail:
