@@ -74,5 +74,5 @@ it needs; see [MOBILE-TESTING.md](../MOBILE-TESTING.md).
 
 - `src/background/background.js`: the network intercept, plus LLM providers.
 - `src/content/`: the nudges, DOM fallback, and parsing (`extractor.js`).
-- `test/probe-*.mjs`: the probes used to characterize YouTube's transcript
+- `test/probe*.mjs`: the probes used to characterize YouTube's transcript
   variants and establish the failure modes above.

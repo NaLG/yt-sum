@@ -2,7 +2,7 @@
 // No WebExtension APIs here: this file is loaded by the content script AND
 // injected verbatim by the test harnesses, so shipped code == tested code.
 //
-// Extraction strategy, in order (see README "Why this design"):
+// Extraction strategy, in order (full story in docs/EXTRACTION.md):
 //   1. DOM panel scrape, trigger YouTube's own "Show transcript" panel and read
 //      the rendered segments. YouTube's app fetches the full transcript in one
 //      internal call (carrying the PoToken/attestation it generates itself) and

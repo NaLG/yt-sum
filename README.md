@@ -57,6 +57,8 @@ npm run run:desktop                  # launch in desktop Firefox on a test video
 node test/smoke-full.mjs [VIDEO_ID]  # AUTHORITATIVE full path: click → extract →
                                      #   (mock LLM) → rendered summary → follow-up
 YAPSUM_CHUNK=1 node test/smoke-full.mjs   # exercise the long-video chunking path
+node test/smoke-options.mjs          # settings page
+node test/smoke-ui.mjs               # button injection
 node test/webext-validate.mjs        # extraction-only, in real Firefox
 npm run build                        # -> dist/<name>-<version>.zip
 ```
@@ -96,7 +98,7 @@ src/
 test/
   smoke-full.mjs            authoritative end-to-end test (extract → summary → Q&A)
   webext-validate.mjs       extraction test (desktop + android)
-  probe-*.mjs               probes used to characterize YouTube's transcript variants
+  probe*.mjs                probes used to characterize YouTube's transcript variants
 docs/                       EXTRACTION.md (how transcripts are captured) + screenshots
 scripts/                    android emulator + device launchers
 ```

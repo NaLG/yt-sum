@@ -49,9 +49,10 @@ reminder about this if you forget.
 This puts yap-sum on your phone by itself; it survives restarts.
 
 1. **Get the add-on file onto the phone.** Build it (`npm run build` →
-   `dist/yap-sum-0.3.0.zip`) and rename/copy it to `yap-sum-0.3.0.xpi`
-   (`.xpi` is just a renamed zip). Email/AirDrop/USB it to the phone, or host it
-   and download it in Nightly. It lands in your Downloads.
+   `dist/return_youtube_summary-<version>.zip`) and rename/copy it to
+   `return_youtube_summary-<version>.xpi` (`.xpi` is just a renamed zip).
+   Email/AirDrop/USB it to the phone, or host it and download it in Nightly.
+   It lands in your Downloads.
 2. **Allow unsigned add-ons.** In Nightly: `⋮ → Settings → About Firefox
    Nightly`, then tap the Firefox **logo 5 times** to unlock the secret
    developer menu. Back in Settings a **"Custom Add-on collection"** /
@@ -60,7 +61,7 @@ This puts yap-sum on your phone by itself; it survives restarts.
    - Also flip the signature check off: address bar → `about:config` →
      search `xpinstall.signatures.required` → set to **false**.
 3. **Install it.** `⋮ → Settings → Extensions → (⋮ top-right) → "Install
-   extension from file"` → pick `yap-sum-0.3.0.xpi` from Downloads → **Add**.
+   extension from file"` → pick the `.xpi` from Downloads → **Add**.
    Grant the permission prompt (this is where Nightly, unlike release, actually
    gives it `webRequest`).
 4. **Use it.** Open a YouTube video → `⋮ → Desktop site` → tap **Summarize**.

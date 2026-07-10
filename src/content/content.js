@@ -1,7 +1,7 @@
 // yap-sum content orchestrator, runs on youtube.com/m.youtube.com.
 // Responsibilities: detect watch pages, inject the Summarize button, and on
-// click run extraction -> LLM -> render. Also a self-test hook for the
-// automated test loop (web-ext run) that reports extraction results to console.
+// click run extraction -> LLM -> render. Also a manual self-test hook that
+// reports extraction results to the console.
 
 (() => {
   const NS = globalThis.yapSum;
@@ -18,11 +18,11 @@
     return !!currentVideoId();
   }
 
-  // ---- self-test hook (used by test/webext-validate.mjs) --------------------
+  // ---- self-test hook (manual diagnostic) ------------------------------------
   // Loading a watch URL with #yapsum-selftest makes the content script run the
   // extractor immediately and print a tagged, machine-readable line to the
-  // page console, which `web-ext run` streams to stdout. This is our
-  // non-automated (non-WebDriver) validation of the extraction pathway.
+  // page console (visible via `web-ext run` stdout or devtools). No automated
+  // test drives this; it exists for hand-run extraction checks.
   async function runSelfTest() {
     const started = Date.now();
     try {
@@ -501,7 +501,6 @@
 
   function renderMarkdown(md, container) {
     container.classList.remove("yapsum-error");
-    delete container.dataset.streaming;
     container.textContent = "";
     const lines = cleanSummary(md).split("\n");
     let list = null, listTag = null;
@@ -590,7 +589,6 @@
     const body = panel.querySelector(".yapsum-panel-body");
     body.textContent = text;
     body.classList.toggle("yapsum-error", isError);
-    delete body.dataset.streaming;
   }
 
   // Error state with a one-click "Copy debug info" button. Also dumps the bundle
@@ -600,7 +598,6 @@
     try { console.log("[yap-sum] DEBUG BUNDLE", JSON.stringify(bundle)); } catch {}
     const body = panel.querySelector(".yapsum-panel-body");
     body.classList.add("yapsum-error");
-    delete body.dataset.streaming;
     body.textContent = message + "\n\n";
     const btn = document.createElement("button");
     btn.className = "yapsum-debug-btn";
@@ -622,14 +619,6 @@
       btn.textContent = ok ? "Copied ✓, paste it to the developer" : "Copy failed, see console";
     });
     body.appendChild(btn);
-  }
-  function appendPanel(panel, text) {
-    const body = panel.querySelector(".yapsum-panel-body");
-    if (body.dataset.streaming !== "1") {
-      body.textContent = "";
-      body.dataset.streaming = "1";
-    }
-    body.textContent += text;
   }
 
   // ---- lifecycle: survive SPA navigation ------------------------------------

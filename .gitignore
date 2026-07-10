@@ -3,3 +3,4 @@ dist/
 web-ext-artifacts/
 *.log
 .DS_Store
+src/.amo-upload-uuid

@@ -16,7 +16,7 @@ LLM API key. No backend, no tracking.
   CSS `.yapsum-*` classes, storage keys, and the local dir / npm name `yap-sum`.
   Only the user-facing display strings are "Return YouTube Summary" / "TL;DW".
 
-## OPEN INVESTIGATION: mobile empty timedtext (2026-07-11, v0.4.5)
+## RESOLVED: mobile empty timedtext (2026-07-11, v0.4.5-0.4.6)
 
 Field failure on the user's phone (Android 16, Fx 152, m.youtube.com, video
 i2YQUXykYM0): video playing, ~50s of capture polling, then ONE player-initiated
@@ -62,9 +62,11 @@ trace's "playing: true" with a stalled video is this. Desktop keeps the
 paused gate. A real user tap on play pulls the transcript within a beat and
 the flow continues automatically (capture polling runs the whole time).
 
-Version bookkeeping: 0.4.1-0.4.3 were consumed (or reserved) by unlisted
-signing for phone testing; AMO version numbers are unique per add-on id across
-channels, so the public listing upload is 0.4.4+.
+Version bookkeeping (the only copy of this rule): AMO version numbers are
+unique per add-on id ACROSS channels, so every unlisted-signed phone build
+burns a number. 0.4.1-0.4.3 and 0.4.6 are burned; the public listing upload is
+0.4.7, or the next bump if 0.4.7 gets sideload-signed first (bump `version` in
+`src/manifest.json` + `package.json`, rebuild).
 
 New in 0.4.3: if the transcript is still fetching after 2.5s and the video is
 paused (autoplay blocked, so the muted nudge did nothing), the panel shows a
@@ -94,16 +96,9 @@ SSE streaming; follow-up Q&A; long-video chunking (map-reduce); collapsible pane
 button styling; visible API key with Show/Hide toggle. Lint 0 errors; all smokes
 pass. Icons: green TL;DW mark at 48/96/128/512.
 
-### One thing still needing a real-device confirm
-
-The **mobile playback nudge** (v0.4.1). On m.youtube.com the player only fetches
-the transcript once playback starts, so a cold Summarize found nothing. Fix: on
-tap we start playback muted **synchronously within the click gesture** (a later
-play() is rejected by autoplay policy once we have awaited anything), capture the
-transcript, then pause and rewind the video. Desktop is unaffected (hostname
-gated). The emulator was too ANR-unstable to auto-confirm; it rests on the user's
-manual repro ("play then Summarize works") which this automates. Test on a real
-phone: a video that failed cold should now summarize without pressing play first.
+(The v0.4.1 "confirm the muted playback nudge on a real device" thread is
+retired: field testing showed the muted nudge does not reliably trigger the
+caption fetch, and the shipped answer is the unconditional play tip above.)
 
 ## Getting a build
 
@@ -129,28 +124,29 @@ Full listing copy + reviewer notes are in `SUBMISSION.md`. Short version:
    `web-ext sign --channel=unlisted` xpi. For the listing you upload the
    **UNSIGNED build zip** through the Developer Hub and Mozilla signs it after
    review. The unlisted xpi is only the private sideload copy.
-3. **Developer Hub , Submit a New Add-on , "On this site" (listed) , upload
-   `dist/return_youtube_summary-<ver>.zip`.** Automated validation runs (passes).
+3. **Developer Hub , open the EXISTING add-on entry** (created by the unlisted
+   signing; still displayed as "yap-sum" there, the listing name gets fixed in
+   the form) **, Upload New Version , channel "On this site" , upload
+   `dist/return_youtube_summary-<ver>.zip`.** Do NOT "Submit a New Add-on";
+   the id already exists and would be rejected as a duplicate. Automated
+   validation runs (passes). Answer No to the source-code question: the zip IS
+   the unminified source.
 4. **Fill the listing** from `SUBMISSION.md`: name (Return YouTube Summary),
    summary, description, category (Search Tools), tags, license (MIT),
    **screenshots** (user is gathering: button in the action row, settings page,
    and a real summary using their own key; a fall-of-Rome doc was suggested as
    generically safe), and the **Notes to reviewer** block (justifies webRequest,
    persistent background, optional host permission, and the anthropic header).
-5. **Privacy policy:** easiest is to paste `PRIVACY.md` text into the form's
-   privacy-policy field (no hosting needed). Or make the repo public and link it.
+5. **Privacy policy:** paste `PRIVACY.md` text into the form's privacy-policy
+   field, or link the file in the public repo.
 6. **Submit for review** (automated + possibly human, a few days). Likely
    reviewer questions (webRequest use; "YouTube" in the name) are pre-answered in
    the reviewer notes. Precedent for the name: "Return YouTube Dislike" is listed.
 
-**Version-uniqueness gotcha:** AMO requires each version number to be unique per
-add-on id. If 0.4.1 was already `web-ext sign`ed (unlisted), the listed upload of
-0.4.1 will be rejected as a duplicate. In that case bump to 0.4.2 and rebuild
-before uploading (change `version` in `src/manifest.json` and `package.json`).
+(Version-uniqueness rule: see "Version bookkeeping" in the state section above.)
 
 ## Open work (tracked as tasks in-session)
 
-- Confirm the v0.4.1 mobile playback fix on a real phone (above).
 - Fit the Summarize button inline on mobile (currently makes its own row);
   needs on-device iteration.
 - Mobile fallback for videos that yield nothing even with playback: Tier 1
@@ -160,6 +156,9 @@ before uploading (change `version` in `src/manifest.json` and `package.json`).
   attestation-gated, so a plain background fetch cannot mint the token.
 
 ## Test and verify
+
+Canonical command list lives in README "Develop & test"; kept here for resume
+convenience:
 
 ```
 node test/smoke-full.mjs [VIDEO_ID]      # authoritative: click , extract , (mock LLM) , summary , follow-up , collapse
