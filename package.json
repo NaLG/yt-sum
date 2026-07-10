@@ -1,6 +1,6 @@
 {
   "name": "yap-sum",
-  "version": "0.4.7",
+  "version": "0.4.8",
   "description": "Firefox extension (desktop + Android) for one-click YouTube AI summaries via your own LLM API key.",
   "type": "module",
   "private": true,

@@ -149,6 +149,9 @@ async function load() {
   const stored = await browser.storage.local.get(FIELDS);
   const cfg = { ...DEFAULTS, ...stored };
   for (const f of FIELDS) if ($(f)) $(f).value = cfg[f];
+  const { buttonStyle } = await browser.storage.local.get({ buttonStyle: "text" });
+  const radio = document.querySelector(`input[name="buttonStyle"][value="${buttonStyle === "icon" ? "icon" : "text"}"]`);
+  if (radio) radio.checked = true;
   updateHint();
   // Seed the dropdown with curated suggestions immediately; a live load
   // refreshes them when the user clicks "Load models" (or Test connection).
@@ -254,6 +257,14 @@ $("model").addEventListener("input", syncModelSelect);
 $("loadModels").addEventListener("click", () => loadModels(false));
 $("save").addEventListener("click", save);
 $("reset").addEventListener("click", reset);
+// Button style is cosmetic and applies instantly (content script listens on
+// storage.onChanged), so it saves on click rather than waiting for Save.
+for (const r of document.querySelectorAll('input[name="buttonStyle"]')) {
+  r.addEventListener("change", async () => {
+    await browser.storage.local.set({ buttonStyle: r.value === "icon" ? "icon" : "text" });
+    setStatus("Button style saved.", "ok");
+  });
+}
 $("test").addEventListener("click", testConnection);
 // Key is visible by default so pasting/editing (e.g. trimming stray text off a
 // pasted string) is easy; the toggle masks it for shoulder-surfing / sharing.

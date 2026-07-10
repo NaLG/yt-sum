@@ -38,10 +38,23 @@ pulls immediately". The diagnostics stay in the code but are dormant: they
 only surface inside the failure-path debug bundle. The Copy-debug button has
 only ever existed on the failure message; success shows nothing debug-like.
 
-## Current state: v0.4.7, release-ready
+## Current state: v0.4.8, release-ready
 
 User confirmed on-phone (2026-07-11): the 2.5s play tip shows and the flow
 works; "functionally what we have works fine". 0.4.6 burned by phone signing.
+
+New in 0.4.8 (button placement + style): desktop button now goes in the OWNER
+row, right of Subscribe (ytd-watch-metadata #owner, appended), because current
+YouTube layouts stretch children injected into the like/share cluster into a
+full-width row of their own (the user's "way wider than the text, above the
+thumb" report). Old action-row hosts remain as fallbacks (prepend). The chip
+CSS is stretch-proof (flex 0 0 auto, width auto, nowrap). New "Summarize
+button style" setting on the options page with live previews: "text" (default)
+or compact round "icon" chip (TL;DW mark; icons/icon-48.png is now a
+web_accessible_resource). Radio saves instantly (storage.local buttonStyle);
+the content script listens on storage.onChanged and swaps the live button in
+place. Mobile keeps the slim-bar prepend; the icon variant is the one likely
+to fit inline there.
 
 New in 0.4.7: browser_action default_title is now just "Return YouTube
 Summary". It was "...: summarize this video", and Firefox's unified extensions

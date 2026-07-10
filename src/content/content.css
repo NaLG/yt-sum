@@ -5,7 +5,13 @@
   align-items: center;
   height: 36px;
   padding: 0 16px;
-  margin-right: 8px;
+  margin: 0 8px;
+  /* Never let a host row stretch or squish the chip: it is exactly as wide as
+     its content, like YouTube's own Subscribe/Join pills. */
+  flex: 0 0 auto;
+  width: auto;
+  white-space: nowrap;
+  align-self: center;
   border: none;
   border-radius: 18px;
   /* Match YouTube's tonal action chips (like/dislike/share) so it blends in
@@ -33,6 +39,22 @@
   .yapsum-btn:hover {
     background: var(--yt-spec-badge-chip-background-hover, rgba(255, 255, 255, 0.2));
   }
+}
+
+/* Compact icon variant: a round chip holding the TL;DW mark, sized like
+   YouTube's round icon buttons so it slots into tight action rows. */
+.yapsum-btn-icon {
+  width: 36px;
+  min-width: 36px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 50%;
+}
+.yapsum-btn-icon img {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  display: block;
 }
 
 .yapsum-panel {

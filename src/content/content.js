@@ -52,18 +52,38 @@
   // ---- UI: inject the Summarize button --------------------------------------
 
   function buttonHost() {
-    // Desktop: the actions row next to like/share. Prefer the one scoped under
-    // #actions (the real watch-metadata row); the bare selector also matches
-    // hidden/renderer-internal copies. Mobile: the slim action bar.
-    return (
+    // Desktop: the owner row, so the chip sits right of Subscribe. (It used to
+    // go in the like/share cluster, but current layouts stretch injected
+    // children there into a full-width row of their own.) Fallbacks: the old
+    // action-row spots. Mobile: the slim action bar, before the like chip.
+    const owner = document.querySelector("ytd-watch-metadata #owner");
+    if (owner) return { el: owner, place: "append" };
+    const el =
       document.querySelector("ytd-watch-metadata #actions #top-level-buttons-computed") ||
       document.querySelector("#actions #top-level-buttons-computed") ||
       document.querySelector("#actions-inner #top-level-buttons-computed") ||
       document.querySelector("ytm-slim-video-action-bar-renderer") ||
       document.querySelector("#actions-inner") ||
-      null
-    );
+      null;
+    return el ? { el, place: "prepend" } : null;
   }
+
+  // Button style, set on the options page: "text" (default) or "icon" (compact
+  // round TL;DW chip). Cached here; storage.onChanged live-swaps it in place.
+  let buttonStyle = "text";
+  browser.storage.local.get({ buttonStyle: "text" }).then((s) => {
+    if (s.buttonStyle === "icon") {
+      buttonStyle = "icon";
+      document.getElementById("yapsum-btn")?.remove();
+      ensureButton();
+    }
+  }).catch(() => {});
+  browser.storage.onChanged.addListener((ch, area) => {
+    if (area !== "local" || !ch.buttonStyle) return;
+    buttonStyle = ch.buttonStyle.newValue === "icon" ? "icon" : "text";
+    document.getElementById("yapsum-btn")?.remove();
+    ensureButton();
+  });
 
   function ensureButton() {
     if (!isWatchPage()) return;
@@ -72,14 +92,23 @@
     if (existing && existing.isConnected && existing.parentElement) return;
     const host = buttonHost();
     if (!host) return;
-    if (host.querySelector("#yapsum-btn")) return;
+    if (host.el.querySelector("#yapsum-btn")) return;
     const btn = document.createElement("button");
     btn.id = "yapsum-btn";
     btn.className = "yapsum-btn";
-    btn.textContent = "Summarize";
-    btn.title = "Return YouTube Summary: summarize this video";
+    btn.title = "Summarize this video";
+    if (buttonStyle === "icon") {
+      btn.classList.add("yapsum-btn-icon");
+      btn.setAttribute("aria-label", "Summarize");
+      const img = document.createElement("img");
+      img.src = browser.runtime.getURL("icons/icon-48.png");
+      img.alt = "Summarize";
+      btn.appendChild(img);
+    } else {
+      btn.textContent = "Summarize";
+    }
     btn.addEventListener("click", onSummarizeClick);
-    host.prepend(btn);
+    host.el[host.place](btn);
   }
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

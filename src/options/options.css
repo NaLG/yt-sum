@@ -46,6 +46,60 @@ label small {
   color: var(--muted);
   margin-top: 4px;
 }
+/* Same look as a top-level label block, for controls (like radio groups) that
+   can't legally live inside one <label>. */
+.field {
+  display: block;
+  margin: 0 0 18px;
+  font-weight: 600;
+}
+.field small {
+  display: block;
+  font-weight: 400;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.btn-style-row {
+  display: flex;
+  gap: 16px;
+  margin-top: 8px;
+}
+.btn-style-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-weight: 400;
+  cursor: pointer;
+}
+.btn-style-opt input[type="radio"] {
+  width: auto;
+  margin: 0;
+}
+.btn-style-name { color: var(--muted); font-size: 13px; }
+/* Previews mimic the injected chip on YouTube. */
+.demo-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 16px;
+  background: rgba(128, 128, 128, 0.18);
+  font-weight: 500;
+  font-size: 13px;
+}
+.demo-chip-icon {
+  width: 32px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 50%;
+}
+.demo-chip-icon img {
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  display: block;
+}
 input, select, textarea {
   width: 100%;
   margin-top: 6px;

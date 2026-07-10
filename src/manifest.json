@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Return YouTube Summary",
-  "version": "0.4.7",
+  "version": "0.4.8",
   "description": "One-click AI summaries of YouTube videos through your own LLM API key. No backend, no tracking.",
   "browser_specific_settings": {
     "gecko": {
@@ -45,6 +45,7 @@
       "run_at": "document_idle"
     }
   ],
+  "web_accessible_resources": ["icons/icon-48.png"],
   "browser_action": {
     "default_title": "Return YouTube Summary",
     "default_popup": "options/panel.html"
