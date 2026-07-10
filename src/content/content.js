@@ -77,7 +77,7 @@
     btn.id = "yapsum-btn";
     btn.className = "yapsum-btn";
     btn.textContent = "Summarize";
-    btn.title = "yap-sum: summarize this video";
+    btn.title = "Return YouTube Summary: summarize this video";
     btn.addEventListener("click", onSummarizeClick);
     host.prepend(btn);
   }
@@ -507,7 +507,7 @@
     // instant — no re-fetch). Only ✕ removes it (then Summarize rebuilds).
     const title = document.createElement("span");
     title.className = "yapsum-panel-title";
-    title.textContent = "yap-sum";
+    title.textContent = "Return YouTube Summary";
     title.title = "Collapse / expand";
     title.addEventListener("click", () => panel.classList.toggle("yapsum-collapsed"));
     const close = document.createElement("button");

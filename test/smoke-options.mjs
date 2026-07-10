@@ -66,7 +66,7 @@ try {
     hasSelect: !!document.getElementById('modelSelect'),
     modelOptions: document.getElementById('modelSelect') ? document.getElementById('modelSelect').options.length : 0,
   };`);
-  check("options page loaded", /yap-sum/i.test(state.title || ""), `title="${state.title}"`);
+  check("options page loaded", /return youtube summary/i.test(state.title || ""), `title="${state.title}"`);
   check("preset chips render", state.presetCount >= 5, `count=${state.presetCount}`);
   check("model dropdown is a <select>", state.hasSelect);
   check("model dropdown pre-seeded", state.modelOptions >= 3, `options=${state.modelOptions}`);

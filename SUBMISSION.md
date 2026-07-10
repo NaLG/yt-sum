@@ -1,29 +1,30 @@
-# AMO submission kit — yap-sum
+# AMO submission kit — Return YouTube Summary
 
 Everything needed to submit a **listed** public release on addons.mozilla.org.
-Publisher/developer display name: **nalg**.
-
-> **Name is not final.** This kit uses "yap-sum" as a placeholder. Once the final
-> name is chosen, update it here, in `src/manifest.json` (`name`), `PRIVACY.md`,
-> and the store listing copy below. The manifest `id` (`yap-sum@nalg.dev`) can
-> stay as-is — it's an internal identifier, not shown to users.
+Publisher/developer display name: **nalg**. Add-on name: **Return YouTube Summary**.
+(The internal manifest `id` stays `yap-sum@nalg.dev` — it's not user-visible and
+must never change once published.)
 
 ## Listing copy (paste into the AMO submission form)
 
-- **Name:** yap-sum _(placeholder — final name TBD)_
-- **Summary** (≤250 chars): One-click AI summaries of YouTube videos using your
-  own LLM API key. No backend, no tracking — the transcript goes only to the
-  provider you choose (OpenAI, Gemini, Anthropic, OpenRouter, Groq, or a local
-  model). Includes follow-up Q&A and long-video handling.
+- **Name:** Return YouTube Summary
+- **Summary** (≤250 chars): The AI-summary button YouTube only sometimes gives
+  you — made permanent, and powered by your own LLM key. One click summarizes any
+  video from its transcript, with follow-up Q&A. No backend, no tracking; your
+  data goes only to the provider you choose.
 - **Description:**
-  > yap-sum adds a Summarize button to YouTube. Click it and it grabs the
-  > current video's transcript and summarizes it through the AI endpoint you
-  > configure with your own API key — so you decide the model, the cost, and
-  > where your data goes. There is no yap-sum server; nothing is collected by
-  > the developer.
+  > YouTube has started rolling out its own "Ask AI" / AI-summary button — but
+  > it's an on-again, off-again experiment: there for some videos, some accounts,
+  > some days, and gone the next. Return YouTube Summary gives you that capability
+  > **reliably, on every video** — and puts *you* in control of the AI behind it.
+  >
+  > Click Summarize and it reads the current video's transcript and summarizes it
+  > through the LLM endpoint you configure with your own API key — so you choose
+  > the model, the cost, and where your data goes. There is no developer server;
+  > nothing is collected.
   >
   > • Bring your own key: any OpenAI-compatible endpoint, native Anthropic, or a
-  >   local model (Ollama / LM Studio).
+  >   local model (Ollama / LM Studio) that never leaves your machine.
   > • Ask follow-up questions about the video, grounded in its transcript.
   > • Long videos are summarized in parts, then synthesized.
   > • Works on desktop and Firefox for Android.
@@ -49,7 +50,7 @@ transmitted to the developer; there is no backend.
 
 ## Reviewer notes (paste into "Notes to reviewer")
 
-> yap-sum summarizes YouTube videos through a user-supplied LLM API key. No
+> Return YouTube Summary summarizes YouTube videos through a user-supplied LLM API key. No
 > developer server exists. Points a reviewer may want:
 >
 > 1. **Source is exactly as shipped.** No minifier, bundler, or transpiler — the
@@ -100,8 +101,8 @@ web-ext sign --api-key=<issuer> --api-secret=<secret> --channel=unlisted \
 
 ## Pre-submit checklist
 
-- [ ] Final name applied in manifest `name`, `PRIVACY.md`, and this file
-- [ ] 128×128 icon added (`src/icons/icon-128.png`) and referenced in manifest `icons`
+- [x] Final name applied — "Return YouTube Summary" (manifest, PRIVACY.md, this file)
+- [x] Icons added — 48/96/128/512 from the green TL;DW logo, referenced in manifest
 - [ ] `PRIVACY.md` hosted; URL in the listing
 - [ ] Version bumped; `web-ext lint` shows 0 errors
 - [ ] Screenshots attached
