@@ -34,6 +34,23 @@ npm run run:android                  # launch on a USB-connected phone
 See [MOBILE-TESTING.md](../MOBILE-TESTING.md) for installing on a real phone
 and the signing path.
 
+#### Verifying mobile UI (screenshots on the emulator)
+
+The extraction harness runs the DESKTOP site inside Fenix; button placement on
+the real mobile site must be verified by eye. Recipe (all adb via
+`. scripts/android-env.sh`, the Homebrew adb hangs at exec):
+
+1. `npm run emulator`, then strip the provisioned desktop-UA override so
+   YouTube serves true m.youtube.com: delete the `general.useragent.override`
+   line from `user.js` in the Fenix Gecko profile (adb root + sed), force-stop
+   Firefox. The next `npm run emulator` re-adds it automatically.
+2. `. scripts/android-env.sh && node scripts/run-android.mjs` (installs the
+   temp add-on; `--start-url` is NOT supported on Android).
+3. Open the page by intent: `adb shell am start -a android.intent.action.VIEW
+   -d "https://m.youtube.com/watch?v=..." org.mozilla.firefox`.
+4. `adb exec-out screencap -p > shot.png` and look at it. Expect emulator ANR
+   dialogs; dismiss with `adb shell input tap`.
+
 ## Publishing
 
 [SUBMISSION.md](../SUBMISSION.md) is the AMO submission kit, listing copy, data

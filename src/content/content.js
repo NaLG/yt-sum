@@ -92,12 +92,15 @@
 
   function ensureButton() {
     if (!isWatchPage()) return;
-    // If our button is still attached to a live host, nothing to do.
-    const existing = document.getElementById("yapsum-btn");
-    if (existing && existing.isConnected && existing.parentElement) return;
     const host = buttonHost();
     if (!host) return;
-    if (host.el.querySelector("#yapsum-btn")) return;
+    // The preferred host can hydrate AFTER a fallback (on mweb the actions
+    // strip appears before the owner row), so a button parked in the wrong
+    // host must MIGRATE when a better one shows up; "already connected" is
+    // only good enough when it's connected to the host we actually want.
+    const existing = document.getElementById("yapsum-btn");
+    if (existing && existing.isConnected && existing.parentElement === host.el) return;
+    if (existing) existing.remove();
     const btn = document.createElement("button");
     btn.id = "yapsum-btn";
     btn.className = "yapsum-btn";
@@ -120,6 +123,11 @@
     const mobileOwner = host.el.tagName?.toLowerCase() === "ytm-slim-owner-renderer";
     if (mobileOwner) btn.classList.add("yapsum-btn-mrow"); // compact, matches the row's scale
     host.el[host.place](btn);
+    console.log(`${LOG} button placed in <${host.el.tagName.toLowerCase()}> (${host.place})`, {
+      dOwner: !!document.querySelector("ytd-watch-metadata #owner"),
+      mOwner: !!document.querySelector("ytm-slim-owner-renderer"),
+      slimBar: !!document.querySelector("ytm-slim-video-action-bar-renderer"),
+    });
     if (mobileOwner && buttonStyle === "text") {
       // The mobile owner row is tight (avatar + name + Subscribe). If the full
       // label overflows the row, collapse it to "Sum" rather than wrapping.
