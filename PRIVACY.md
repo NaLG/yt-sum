@@ -31,7 +31,7 @@ Permissions
 
 - Host access to youtube.com and m.youtube.com: adds the button and reads the transcript of the page you're viewing.
 - webRequest: reads YouTube's own transcript and caption responses, the reliable way to obtain a transcript. Nothing outside YouTube's transcript requests is intercepted, and page content is not modified.
-- Host access to the listed LLM API hosts, plus optional access to other origins: solely to send your request to the endpoint you configure. The broad option is opt-in and exists for custom endpoints you enter yourself.
+- Optional host access to LLM API endpoints: nothing is granted at install. When you configure a provider, Firefox asks you to allow access to that one host, and only it, so your requests can be sent there. The broad any-site option is likewise opt-in and exists for custom endpoints you enter yourself.
 - storage: saves your settings and key locally.
 
 Your control

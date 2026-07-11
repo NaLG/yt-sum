@@ -17,7 +17,9 @@ const PORT = 4470;
 const FIREFOX = "/Applications/Firefox.app/Contents/MacOS/firefox";
 const SRC = new URL("../src", import.meta.url).pathname;
 const UUID = "11111111-1111-1111-1111-111111111111";
-const ADDON_ID = "yap-sum@nalg.dev";
+// Read the id from the manifest so id changes can't silently break the UUID pin.
+const ADDON_ID = JSON.parse(readFileSync(new URL("../src/manifest.json", import.meta.url), "utf8"))
+  .browser_specific_settings.gecko.id;
 
 const base = `http://127.0.0.1:${PORT}`;
 async function wd(method, path, body) {
@@ -49,8 +51,13 @@ try {
       "moz:firefoxOptions": {
         binary: FIREFOX,
         args: ["-headless", "--no-remote", "--new-instance"],
-        // Pin the extension's internal UUID so we can navigate to its options page.
-        prefs: { "extensions.webextensions.uuids": JSON.stringify({ [ADDON_ID]: UUID }) },
+        // Pin the extension's internal UUID so we can navigate to its options
+        // page, and auto-accept optional-permission requests so the runtime
+        // host-grant flow (ensureHostPermission) is testable end to end.
+        prefs: {
+          "extensions.webextensions.uuids": JSON.stringify({ [ADDON_ID]: UUID }),
+          "extensions.webextOptionalPermissionPrompts": false,
+        },
       },
       timeouts: { script: 20000, pageLoad: 30000 },
     } },
@@ -103,6 +110,25 @@ try {
   check("API key visible by default", keyState.before === "text", `type="${keyState.before}"`);
   check("toggle masks the key", keyState.after === "password");
   check("toggle restores visibility", keyState.restored === "text");
+
+  // Provider hosts are OPTIONAL permissions: Save must runtime-request the
+  // one host for the configured endpoint (auto-granted via the pref above)
+  // and end in "Saved.", proving the least-privilege grant flow works.
+  // permissions.request demands a USER INPUT handler, so the click must be a
+  // trusted WebDriver element click, not a synthetic executeScript .click().
+  await ex(sid, `document.getElementById('apiKey').value = 'sk-smoke-test';`);
+  const found = await wd("POST", `/session/${sid}/element`, { using: "css selector", value: "#save" });
+  const eid = Object.values(found)[0];
+  await wd("POST", `/session/${sid}/element/${eid}/click`, {});
+  let saveStatus = "";
+  for (let i = 0; i < 20; i++) {
+    await new Promise((r) => setTimeout(r, 500));
+    saveStatus = (await ex(sid, `return document.getElementById('status').textContent;`)) || "";
+    if (saveStatus) break;
+  }
+  check("save runtime-grants the provider host", /^saved\.?$/i.test(saveStatus.trim()), `status="${saveStatus}"`);
+  const granted = await ex(sid, `return browser.permissions.contains({ origins: ["https://openrouter.ai/*"] });`).catch(() => null);
+  check("openrouter.ai origin granted after save", granted === true, `contains=${granted}`);
 } catch (e) {
   console.log("SMOKE ERROR:", e.message);
   failures++;

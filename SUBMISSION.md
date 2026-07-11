@@ -69,10 +69,11 @@ transmitted to the developer; there is no backend.
 >    read as plain text. See `src/background/background.js`.
 > 3. **Persistent background page** is required because MV2 event pages cannot
 >    register blocking `webRequest` listeners.
-> 4. **Optional `https://*/*` permission** is opt-in and used solely so a user can
->    point the extension at a custom LLM endpoint they enter themselves. The
->    always-granted host permissions are limited to YouTube and the named
->    provider APIs.
+> 4. **All LLM hosts are `optional_permissions`** (least privilege): the only
+>    install-time host permissions are the two YouTube origins. When the user
+>    configures a provider, the settings page requests access to that single
+>    host at Save / Test connection (a user gesture); `https://*/*` is likewise
+>    optional and exists solely for custom endpoints the user types themselves.
 > 5. **`anthropic-dangerous-direct-browser-access` header** is Anthropic's
 >    sanctioned header for browser-based BYO-key requests.
 > 6. **No remote code / no eval.** All model output is inserted with

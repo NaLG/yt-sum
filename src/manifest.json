@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Return YouTube Summary",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "One-click AI summaries of YouTube videos through your own LLM API key. No backend, no tracking.",
   "browser_specific_settings": {
     "gecko": {
@@ -23,15 +23,15 @@
     "webRequest",
     "webRequestBlocking",
     "https://www.youtube.com/*",
-    "https://m.youtube.com/*",
+    "https://m.youtube.com/*"
+  ],
+  "optional_permissions": [
     "https://api.openai.com/*",
     "https://api.anthropic.com/*",
     "https://api.z.ai/*",
     "https://generativelanguage.googleapis.com/*",
     "https://openrouter.ai/*",
-    "https://api.groq.com/*"
-  ],
-  "optional_permissions": [
+    "https://api.groq.com/*",
     "http://localhost/*",
     "http://127.0.0.1/*",
     "https://*/*"

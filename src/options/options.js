@@ -150,9 +150,10 @@ async function load() {
   fillModelList(FALLBACK_MODELS[cfg.provider] || []);
 }
 
-// Ensure we have host permission to reach a non-default endpoint (local servers,
-// custom hosts). YouTube + the listed providers we could pre-declare, but BYO
-// URLs are open-ended, so request at save time.
+// Ensure we have host permission for the endpoint. ALL LLM hosts are optional
+// permissions (least privilege: the install prompt stays YouTube-only), so the
+// first Save / Test connection for a provider shows one Allow doorhanger for
+// that host alone; the grant persists.
 async function ensureHostPermission(baseUrl) {
   let origin;
   try {
@@ -160,16 +161,16 @@ async function ensureHostPermission(baseUrl) {
   } catch {
     throw new Error("Base URL is not a valid URL.");
   }
-  const has = await browser.permissions.contains({ origins: [origin] });
-  if (has) return true;
-  // permissions.request needs a user gesture (the Save/Test click) and isn't
-  // available on older Firefox for Android. Well-known provider hosts are
-  // already granted via the manifest, so this path is only hit for custom/local
-  // endpoints.
+  // permissions.request needs a user gesture (the Save/Test click), and the
+  // gesture context can be LOST by awaiting anything first (same class of bug
+  // as the mobile play() lesson). request() resolves true without prompting
+  // when the origin is already granted, so call it FIRST, no contains() probe.
   if (!browser.permissions.request) {
+    const has = await browser.permissions.contains({ origins: [origin] });
+    if (has) return true;
     throw new Error(
       `This Firefox can't grant access to ${origin} at runtime. ` +
-        `Custom/local endpoints need a newer Firefox for Android, or use one of the built-in provider hosts.`
+        `Update Firefox, or use an endpoint you've already granted.`
     );
   }
   const granted = await browser.permissions.request({ origins: [origin] });

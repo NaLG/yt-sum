@@ -26,17 +26,33 @@ signs never burn version numbers on the production entry. Store releases are
 0.5.1+ on the production id. The phone's old sideload will not auto-update
 (different id); reinstall from the store page once the listing is public.
 
+## DONE 2026-07-12: permission trim (least privilege), v0.5.1
+
+The six provider API hosts moved from `permissions` to `optional_permissions`:
+the install prompt is now the two YouTube hosts + the data disclosure, and the
+first Save / Test connection for a provider shows ONE Allow doorhanger for
+that host alone. Two real bugs found and fixed while validating:
+- ensureHostPermission awaited permissions.contains() BEFORE request(), which
+  destroys the user-gesture context (documented Firefox behavior: awaiting
+  any promise ends the user-input handler). request() is now called FIRST; it
+  resolves true silently when already granted, so no probe is needed.
+- Test harnesses hardcoded the old gecko.id; smoke-options now reads the id
+  from the manifest.
+Machine-verified: smoke-options runs the real grant flow (trusted WebDriver
+element click on Save, prompts auto-accepted via the
+extensions.webextOptionalPermissionPrompts=false test pref, then asserts
+"Saved." + permissions.contains for the origin). Synthetic executeScript
+clicks do NOT carry user-input status; only trusted WebDriver element clicks
+do. smoke-full and smoke-placement pass. Permission reductions ship silently
+to existing users. NOTE for the next Hub visit: PRIVACY.md's permissions
+paragraph changed (nothing granted at install); re-paste it into the AMO
+privacy field.
+
 ## NEXT work items (user-approved queue)
 
-1. Permission trim (least privilege): move the six provider API hosts from
-   `permissions` to `optional_permissions` in the manifest. The options page
-   already has the machinery (ensureHostPermission() requests origins at
-   Save / Test connection, inside a user gesture); the Android floor of 142
-   supports permissions.request. Result: the install prompt shrinks to the
-   two YouTube hosts + the data disclosure, and users grant only the one
-   provider they actually use. Validate the grant prompt on desktop and
-   Android before shipping. Permission REDUCTIONS update silently for
-   existing users.
+1. Ship 0.5.1 to the store: `web-ext sign --channel=listed` (production id is
+   in the manifest now; the Hub's Upload New Version also works since the
+   entry auto-inherits the LISTED channel).
 2. Product page cosmetics: upload the listing icon (src/icons/icon-128.png,
    manual on Edit Product Page, AMO ignores manifest icons); screenshots
    (docs/mobile-summarize-button.png is STALE, it predates the left-of-like
