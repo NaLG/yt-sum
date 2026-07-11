@@ -38,7 +38,25 @@ pulls immediately". The diagnostics stay in the code but are dormant: they
 only surface inside the failure-path debug bundle. The Copy-debug button has
 only ever existed on the failure message; success shows nothing debug-like.
 
-## Current state: v0.4.16, LISTING SUBMISSION IN FLIGHT
+## RESOLVED: how to actually publish LISTED for an unlisted-born add-on
+
+The Developer Hub HIDES all channel UI until an add-on has at least one
+listed version (template-gated: has_listed_versions). "Upload a New Version"
+is submit_version_auto and silently inherits the unlisted channel. The
+working path, no Hub UI involved:
+
+    web-ext sign --api-key=<issuer> --api-secret=<secret> --channel=listed \
+      --source-dir src --artifacts-dir dist
+
+Listed submissions return no xpi (AMO hosts/signs them); web-ext ends with
+"wait for an email, up to 24h", which IS success. Verify in Manage Status &
+Versions: versions grow "AMO" vs "Self" channel tags once both channels
+exist, and the Listing visibility control appears. NEVER delete the add-on
+entry expecting to reuse its id: AMO permanently reserves deleted ids.
+Listing icon is a manual upload on Edit Product Page (AMO ignores manifest
+icons); screenshots same place.
+
+## Current state: v0.4.16, LISTING SUBMISSION IN FLIGHT (via --channel=listed)
 
 CHANNEL TRAP (2026-07-11, cost one version): the Developer Hub "Upload a New
 Version" flow let 0.4.15 land in the UNLISTED channel (the add-on's original
