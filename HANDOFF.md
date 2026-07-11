@@ -38,7 +38,28 @@ pulls immediately". The diagnostics stay in the code but are dormant: they
 only surface inside the failure-path debug bundle. The Copy-debug button has
 only ever existed on the failure message; success shows nothing debug-like.
 
-## Current state: v0.4.14, placement re-specced LEFT OF LIKE and machine-verified
+## Current state: v0.4.16, LISTING SUBMISSION IN FLIGHT
+
+CHANNEL TRAP (2026-07-11, cost one version): the Developer Hub "Upload a New
+Version" flow let 0.4.15 land in the UNLISTED channel (the add-on's original
+channel from web-ext sign), producing a signed-but-private version and a
+"tentatively approved / now available at" email that LOOKS like a listing.
+Tell: the version page banner says "This is not a public listing" and the new
+version sits in the same list as the sideload builds. The listed upload MUST
+explicitly select channel "On this site". Product-page metadata (name,
+summary, description, privacy, authors) lives on the ADD-ON and survives;
+it goes public when a listed version is approved. 0.4.15 is burned; 0.4.16 is
+the listing artifact.
+
+0.4.16 = 0.4.15 + gecko_android strict_min_version 120 -> 142 (Android
+support floor for data_collection_permissions; clears Android validation
+warnings and keeps the listing's Android install button). Remaining lint
+warnings (3) are accepted: desktop min 115 predates the consent-UI key
+(gracefully ignored by old Firefox; raising to 140 would cut ESR), and two
+Android permissions.request warnings where the linter checks the desktop min
+instead of gecko_android (runtime already guards that API).
+
+## Previous: v0.4.14, placement re-specced LEFT OF LIKE and machine-verified
 
 USER DECISION (2026-07-11): the button goes immediately LEFT of the like
 (thumbs-up) control, desktop AND mobile (supersedes right-of-Subscribe). New
