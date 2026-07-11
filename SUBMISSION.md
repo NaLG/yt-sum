@@ -2,8 +2,11 @@
 
 Everything needed to submit a **listed** public release on addons.mozilla.org.
 Publisher/developer display name: **nalg**. Add-on name: **Return YouTube Summary**.
-(The internal manifest `id` stays `yap-sum@nalg.dev`; it is not user-visible and
-must never change once published.)
+(Internal manifest `id`: UNVERIFIED as of 2026-07-11 night. Either
+`yap-sum@nalg.dev` (0.4.16 via web-ext sign --channel=listed) or
+`return-youtube-summary@nalg.dev` (0.5.0 via a fresh Submit a New Add-on) is
+the live listing; check the Developer Hub and sync the repo manifest to match.
+Once real users exist the id must never change again.)
 
 ## Listing copy (paste into the AMO submission form)
 
@@ -83,9 +86,10 @@ transmitted to the developer; there is no backend.
 
 ## Screenshots to attach
 
-- Desktop: the Summarize button in the action row + a rendered summary panel.
-- Mobile: `docs/mobile-summarize-button.png` (already in repo).
-- The settings page (provider presets + model dropdown).
+- Desktop: the Summarize button left of the like control + a rendered summary panel.
+- Mobile: capture fresh; `docs/mobile-summarize-button.png` is STALE (predates
+  the left-of-like placement and the current styles).
+- The settings page (provider presets, model dropdown, button-style picker).
 
 ## Build & sign
 
@@ -101,11 +105,10 @@ web-ext sign --api-key=<issuer> --api-secret=<secret> --channel=unlisted \
   --source-dir src --artifacts-dir dist
 ```
 
-## Pre-submit checklist
+## Status (2026-07-11)
 
-- [x] Final name applied, "Return YouTube Summary" (manifest, PRIVACY.md, this file)
-- [x] Icons added, 48/96/128/512 from the green TL;DW logo, referenced in manifest
-- [ ] `PRIVACY.md` hosted; URL in the listing
-- [ ] Version bumped; `web-ext lint` shows 0 errors
-- [ ] Screenshots attached
-- [x] License chosen, MIT (`LICENSE`)
+- [x] Name, icons, license, privacy policy text, listing copy, reviewer notes: all submitted
+- [x] Listed version submitted (identity verification pending, see note at top)
+- [ ] Listing icon uploaded on Edit Product Page (src/icons/icon-128.png; AMO ignores manifest icons)
+- [ ] Screenshots attached (capture fresh, see above)
+- [ ] Homepage / support-site fields (github repo) on Edit Product Page
