@@ -5,11 +5,6 @@ const $ = (id) => document.getElementById(id);
 
 let DEFAULTS = null;
 
-const BASE_URL_HINTS = {
-  openai: 'e.g. https://api.openai.com/v1 · GLM: https://api.z.ai/api/paas/v4 · Ollama: http://localhost:11434/v1',
-  anthropic: "https://api.anthropic.com/v1 (native Claude Messages API)",
-};
-
 // Clickable quick-setup presets. Clicking one fills provider + base URL + a
 // sensible default model.
 const PRESETS = [
@@ -42,7 +37,6 @@ function applyPreset(i) {
   $("provider").value = p.provider;
   $("baseUrl").value = p.baseUrl;
   if (p.model) $("model").value = p.model;
-  updateHint();
   fillModelList(FALLBACK_MODELS[p.provider] || []);
   syncModelSelect();
   setStatus(`Filled ${p.label}. Add your API key, then Save (or Load models to pick one).`, "ok");
@@ -52,10 +46,6 @@ function setStatus(msg, kind = "") {
   const el = $("status");
   el.textContent = msg;
   el.className = "status " + kind;
-}
-
-function updateHint() {
-  $("baseUrlHint").textContent = BASE_URL_HINTS[$("provider").value] || "";
 }
 
 // Curated fallback suggestions so the dropdown is never empty, even before a
@@ -155,7 +145,6 @@ async function load() {
   const styleVal = ["icon", "tldw", "sum"].includes(buttonStyle) ? buttonStyle : "text";
   const radio = document.querySelector(`input[name="buttonStyle"][value="${styleVal}"]`);
   if (radio) radio.checked = true;
-  updateHint();
   // Seed the dropdown with curated suggestions immediately; a live load
   // refreshes them when the user clicks "Load models" (or Test connection).
   fillModelList(FALLBACK_MODELS[cfg.provider] || []);
@@ -243,7 +232,6 @@ async function testConnection() {
 }
 
 $("provider").addEventListener("change", () => {
-  updateHint();
   fillModelList(FALLBACK_MODELS[$("provider").value] || []);
 });
 // Dropdown → text input. "Custom" focuses the field for manual entry.

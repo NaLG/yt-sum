@@ -78,7 +78,6 @@ label small {
   width: auto;
   margin: 0;
 }
-.btn-style-name { color: var(--muted); font-size: 13px; }
 /* Previews mimic the injected chip on YouTube. */
 .demo-chip {
   display: inline-flex;
