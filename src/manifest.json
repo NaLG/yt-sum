@@ -1,14 +1,17 @@
 {
   "manifest_version": 2,
   "name": "Return YouTube Summary",
-  "version": "0.4.16",
+  "version": "0.5.0",
   "description": "One-click AI summaries of YouTube videos through your own LLM API key. No backend, no tracking.",
   "browser_specific_settings": {
     "gecko": {
-      "id": "yap-sum@nalg.dev",
+      "id": "return-youtube-summary@nalg.dev",
       "strict_min_version": "115.0",
       "data_collection_permissions": {
-        "required": ["websiteContent", "authenticationInfo"]
+        "required": [
+          "websiteContent",
+          "authenticationInfo"
+        ]
       }
     },
     "gecko_android": {
@@ -34,18 +37,30 @@
     "https://*/*"
   ],
   "background": {
-    "scripts": ["background/background.js"],
+    "scripts": [
+      "background/background.js"
+    ],
     "persistent": true
   },
   "content_scripts": [
     {
-      "matches": ["https://www.youtube.com/*", "https://m.youtube.com/*"],
-      "js": ["content/extractor.js", "content/content.js"],
-      "css": ["content/content.css"],
+      "matches": [
+        "https://www.youtube.com/*",
+        "https://m.youtube.com/*"
+      ],
+      "js": [
+        "content/extractor.js",
+        "content/content.js"
+      ],
+      "css": [
+        "content/content.css"
+      ],
       "run_at": "document_idle"
     }
   ],
-  "web_accessible_resources": ["icons/icon-48.png"],
+  "web_accessible_resources": [
+    "icons/icon-48.png"
+  ],
   "browser_action": {
     "default_title": "Return YouTube Summary",
     "default_popup": "options/panel.html"

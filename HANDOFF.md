@@ -11,37 +11,24 @@ LLM API key. No backend, no tracking.
 
 - Product name: Return YouTube Summary. Short mark (icon + panel header): TL;DW.
 - Publisher/display name: nalg. License: MIT. Repo: github.com/NaLG/yt-sum.
-- Internal ids that must not change once users exist: manifest gecko.id, CSS
-  .yapsum-* classes, storage keys, local dir / npm name yap-sum. CAVEAT: the
-  gecko.id itself is UNVERIFIED right now, see Current state.
+- Internal ids that must NEVER change (the listing is live): manifest gecko.id
+  return-youtube-summary@nalg.dev, CSS .yapsum-* classes, storage keys, local
+  dir / npm name yap-sum.
 
-## CURRENT STATE (2026-07-11, late): store submission is IN, identity unverified
+## CURRENT STATE (2026-07-11): STORE IDENTITY RESOLVED, v0.5.0 listed
 
-Two listing submissions happened while fighting AMO's channel plumbing, and it
-is not yet confirmed which one is the live listing:
-
-- (a) 0.4.16 under gecko.id yap-sum@nalg.dev, submitted with
-  `web-ext sign --channel=listed` (the wait-for-email ending, which is what a
-  successful listed submission looks like).
-- (b) Probably ALSO a fresh "Submit a New Add-on" with
-  dist/return_youtube_summary-0.5.0.zip under NEW id
-  return-youtube-summary@nalg.dev (the user completed the whole new-submission
-  flow: MIT license picked, privacy policy pasted, reviewer notes with repo
-  link, permissions summary reviewed; reported "submission is in, page is up
-  differently than before").
-
-FIRST TASK NEXT SESSION: open the Developer Hub, determine which entry has the
-live/approved listed version, then sync the repo to match (manifest gecko.id +
-version, SUBMISSION.md id line, this file). If (b) won: the repo id becomes
-return-youtube-summary@nalg.dev at version 0.5.0, and the phone's sideloaded
-copy will NOT update to the store version (different id, one-time reinstall
-from the listing). NEVER delete the losing AMO entry expecting to reuse its
-id: deleted AMO ids are permanently reserved.
+The fresh "Submit a New Add-on" won: the live listing is
+return-youtube-summary@nalg.dev at 0.5.0 (repo manifest synced). The OLD
+entry (yap-sum@nalg.dev) was renamed "-test" in the Hub and is now the
+dedicated SIDELOAD/TESTING channel: sign test builds against it by
+temporarily swapping the id back to yap-sum@nalg.dev at build time, so test
+signs never burn version numbers on the production entry. Store releases are
+0.5.1+ on the production id. The phone's old sideload will not auto-update
+(different id); reinstall from the store page once the listing is public.
 
 ## NEXT work items (user-approved queue)
 
-1. Verify which submission is live and sync repo identity (above).
-2. Permission trim (least privilege): move the six provider API hosts from
+1. Permission trim (least privilege): move the six provider API hosts from
    `permissions` to `optional_permissions` in the manifest. The options page
    already has the machinery (ensureHostPermission() requests origins at
    Save / Test connection, inside a user gesture); the Android floor of 142
@@ -50,22 +37,23 @@ id: deleted AMO ids are permanently reserved.
    provider they actually use. Validate the grant prompt on desktop and
    Android before shipping. Permission REDUCTIONS update silently for
    existing users.
-3. Product page cosmetics: upload the listing icon (src/icons/icon-128.png,
+2. Product page cosmetics: upload the listing icon (src/icons/icon-128.png,
    manual on Edit Product Page, AMO ignores manifest icons); screenshots
    (docs/mobile-summarize-button.png is STALE, it predates the left-of-like
    placement; capture fresh desktop + phone shots); homepage and support-site
    fields (github repo) can be added there any time.
-4. README: replace "coming to addons.mozilla.org" with the live listing link.
-5. Support email, later, optional: support@nalg.dev via Cloudflare Email
+3. README: replace "coming to addons.mozilla.org" with the live listing link.
+4. Support email, later, optional: support@nalg.dev via Cloudflare Email
    Routing forwarding to a personal inbox. Do not REPLY from the personal
    address (de-pseudonymizes); answer on GitHub issues instead.
 
 ## Version bookkeeping
 
-AMO version numbers are unique per add-on id ACROSS channels; every
-sideload-signed build burns a number. Burned on yap-sum@nalg.dev:
-0.4.1-0.4.3, 0.4.6, 0.4.10, 0.4.13, 0.4.14 (sideloads), 0.4.15 (the channel
-accident), 0.4.16 (listed submission). The new-id entry starts at 0.5.0.
+AMO version numbers are unique per add-on id ACROSS channels; every signed
+build burns a number on its entry. Production (return-youtube-summary@nalg.dev):
+0.5.0 live, releases continue 0.5.1+. Test entry (yap-sum@nalg.dev, renamed
+"-test"): 0.4.x graveyard, keep using it for sideload test signs by swapping
+the id at build time so the production version history stays clean.
 
 ## AMO lessons (hard-won 2026-07-11, do not relearn)
 

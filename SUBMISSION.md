@@ -2,11 +2,10 @@
 
 Everything needed to submit a **listed** public release on addons.mozilla.org.
 Publisher/developer display name: **nalg**. Add-on name: **Return YouTube Summary**.
-(Internal manifest `id`: UNVERIFIED as of 2026-07-11 night. Either
-`yap-sum@nalg.dev` (0.4.16 via web-ext sign --channel=listed) or
-`return-youtube-summary@nalg.dev` (0.5.0 via a fresh Submit a New Add-on) is
-the live listing; check the Developer Hub and sync the repo manifest to match.
-Once real users exist the id must never change again.)
+(Internal manifest `id`: `return-youtube-summary@nalg.dev`, live at 0.5.0
+since 2026-07-11; it must never change again. The old `yap-sum@nalg.dev`
+entry is renamed "-test" in the Hub and serves as the sideload/testing
+channel only.)
 
 ## Listing copy (paste into the AMO submission form)
 
