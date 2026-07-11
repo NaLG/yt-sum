@@ -50,9 +50,12 @@ privacy field.
 
 ## NEXT work items (user-approved queue)
 
-1. Ship 0.5.1 to the store: `web-ext sign --channel=listed` (production id is
-   in the manifest now; the Hub's Upload New Version also works since the
-   entry auto-inherits the LISTED channel).
+1. DONE 2026-07-12: 0.5.1 submitted listed via `web-ext sign --channel=listed`
+   (in approval; visible in the Hub), privacy policy re-pasted. Once live:
+   install from the store page on BOTH phone and desktop (uninstall the old
+   sideload first on the phone, its id differs, it will never update) and
+   verify the fresh-install UX: slim two-host install prompt, then ONE Allow
+   doorhanger on the first Test connection / Save.
 2. Product page cosmetics: upload the listing icon (src/icons/icon-128.png,
    manual on Edit Product Page, AMO ignores manifest icons); screenshots
    (docs/mobile-summarize-button.png is STALE, it predates the left-of-like
