@@ -16,6 +16,8 @@ YAPSUM_CHUNK=1 node test/smoke-full.mjs   # exercise the long-video chunking pat
 node test/smoke-options.mjs          # settings page
 node test/smoke-ui.mjs               # button injection
 node test/webext-validate.mjs        # extraction-only, in real Firefox
+node test/smoke-placement.mjs        # button placement + all styles, geometric asserts
+node test/smoke-placement.mjs --target firefox-android   # same on the emulator (mobile site)
 npm run build                        # -> dist/<name>-<version>.zip
 ```
 

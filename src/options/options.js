@@ -152,7 +152,7 @@ async function load() {
   const cfg = { ...DEFAULTS, ...stored };
   for (const f of FIELDS) if ($(f)) $(f).value = cfg[f];
   const { buttonStyle } = await browser.storage.local.get({ buttonStyle: "text" });
-  const styleVal = ["icon", "tldw"].includes(buttonStyle) ? buttonStyle : "text";
+  const styleVal = ["icon", "tldw", "sum"].includes(buttonStyle) ? buttonStyle : "text";
   const radio = document.querySelector(`input[name="buttonStyle"][value="${styleVal}"]`);
   if (radio) radio.checked = true;
   updateHint();
@@ -264,7 +264,7 @@ $("reset").addEventListener("click", reset);
 // storage.onChanged), so it saves on click rather than waiting for Save.
 for (const r of document.querySelectorAll('input[name="buttonStyle"]')) {
   r.addEventListener("change", async () => {
-    await browser.storage.local.set({ buttonStyle: ["icon", "tldw"].includes(r.value) ? r.value : "text" });
+    await browser.storage.local.set({ buttonStyle: ["icon", "tldw", "sum"].includes(r.value) ? r.value : "text" });
     setStatus("Button style saved.", "ok");
   });
 }

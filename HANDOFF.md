@@ -38,7 +38,29 @@ pulls immediately". The diagnostics stay in the code but are dormant: they
 only surface inside the failure-path debug bundle. The Copy-debug button has
 only ever existed on the failure message; success shows nothing debug-like.
 
-## Current state: v0.4.13, mobile placement verified on the USER'S OWN mweb variant
+## Current state: v0.4.14, placement re-specced LEFT OF LIKE and machine-verified
+
+USER DECISION (2026-07-11): the button goes immediately LEFT of the like
+(thumbs-up) control, desktop AND mobile (supersedes right-of-Subscribe). New
+in 0.4.14:
+- Anchor = the like component, tried in priority order (scoped desktop
+  segmented tags, scoped mweb tag, bare like-button-view-model /
+  ytm-like-button-renderer, aria-label ^like fallback), each candidate must be
+  VISIBLE and OUTSIDE the player (the player chrome has its own hidden like
+  button that precedes the metadata in document order; comma-joined
+  querySelector returns document order, so selectors are tried sequentially).
+- Fourth button style "sum" (small Sum pill): text | sum | tldw | icon.
+- test/smoke-placement.mjs: runs the REAL extension (web-ext, reporter content
+  script, localhost relay; --target firefox-android uses adb reverse and
+  fires the watch URL by intent AFTER web-ext prints Installed, on stdout OR
+  stderr). Asserts geometrically for every style: same row as like, strictly
+  left of it, content width. Desktop 13/13 and emulator mweb (merged-row
+  variant, the user's own) 13/13. Field bonus: mobile's merged row overflows
+  with full "Summarize" and the auto-collapse to "Sum" fired as designed.
+This is the placement-verification loop that was missing during the
+0.4.8-0.4.13 saga; run it for ANY change near the button.
+
+## Previous: v0.4.13 subscribe-anchor round (superseded by left-of-like)
 
 v0.4.12 still failed on the user's phone. Second root cause: mweb A/B
 variants. The user's signed-in layout is the MERGED-ROW variant: avatar +

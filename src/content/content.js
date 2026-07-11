@@ -52,12 +52,46 @@
   // ---- UI: inject the Summarize button --------------------------------------
 
   function buttonHost() {
-    // Both platforms: right of Subscribe. Desktop: the owner row container.
-    // Mobile: anchor to the subscribe CONTROL itself and insert right after
-    // it, whatever container this A/B variant put it in. Container tags are
-    // variant-dependent (signed-in mweb merges owner + actions into ONE row
-    // with no ytm-slim-owner-renderer at all, field-confirmed 2026-07-11),
-    // but every variant has a Subscribe/Subscribed control.
+    // Both platforms: immediately LEFT of the like (thumbs-up) control, the
+    // user-chosen placement. Component tags are A/B-variant-dependent, so try
+    // the known like components first, then locate the like button by
+    // aria-label and climb wrappers to the row-level component so the chip
+    // lands beside the like/dislike pill, not inside it.
+    // The player chrome has its OWN (hidden) like button that precedes the
+    // metadata section in document order, so candidates must be visible and
+    // outside the player, and scoped selectors must be tried in PRIORITY
+    // order (a comma-joined querySelector returns document order instead).
+    const usable = (el) => {
+      if (!el || el.closest("#player, ytd-player, #movie_player, .html5-video-player, yt-player-quick-action-buttons")) return null;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 ? el : null;
+    };
+    let likeComponent =
+      usable(document.querySelector("ytd-watch-metadata segmented-like-dislike-button-view-model")) ||
+      usable(document.querySelector("ytd-watch-metadata ytd-segmented-like-dislike-button-renderer")) ||
+      usable(document.querySelector("ytm-slim-video-action-bar-renderer ytm-like-button-renderer"));
+    if (!likeComponent) {
+      for (const c of document.querySelectorAll("like-button-view-model, ytm-like-button-renderer")) {
+        if ((likeComponent = usable(c))) break;
+      }
+    }
+    if (!likeComponent) {
+      for (const b of [...document.querySelectorAll("button[aria-label]")].slice(0, 80)) {
+        if (/^like\b/i.test(b.getAttribute("aria-label") || "") && (likeComponent = usable(b))) break;
+      }
+    }
+    if (likeComponent) {
+      let el = likeComponent;
+      for (let depth = 0; el.parentElement && depth < 4; depth++) {
+        const p = el.parentElement;
+        const likeDislikePill =
+          p.children.length === 2 && p.querySelector('button[aria-label*="islike"]');
+        if (p.children.length === 1 || likeDislikePill) { el = p; continue; }
+        break;
+      }
+      return { el, place: "before" };
+    }
+    // Fallbacks: right of Subscribe, then the owner row, then the old spots.
     const owner = document.querySelector("ytd-watch-metadata #owner");
     if (owner) return { el: owner, place: "append" };
     const mSub =
@@ -78,10 +112,10 @@
     return el ? { el, place: "prepend" } : null;
   }
 
-  // Button style, set on the options page: "text" (default), "tldw" (smaller
-  // TL;DW pill), or "icon" (compact round chip). Cached here;
-  // storage.onChanged live-swaps the button in place.
-  const normStyle = (v) => (v === "icon" || v === "tldw" ? v : "text");
+  // Button style, set on the options page: "text" (default), "sum" (small
+  // Sum pill), "tldw" (small TL;DW pill), or "icon" (compact round chip).
+  // Cached here; storage.onChanged live-swaps the button in place.
+  const normStyle = (v) => (v === "icon" || v === "tldw" || v === "sum" ? v : "text");
   let buttonStyle = "text";
   browser.storage.local.get({ buttonStyle: "text" }).then((s) => {
     if (normStyle(s.buttonStyle) !== buttonStyle) {
@@ -107,8 +141,8 @@
     // only good enough when it's connected where we actually want it.
     const existing = document.getElementById("yapsum-btn");
     const placedRight = existing && existing.isConnected &&
-      (host.place === "after"
-        ? existing.previousElementSibling === host.el
+      (host.place === "after" ? existing.previousElementSibling === host.el
+        : host.place === "before" ? existing.nextElementSibling === host.el
         : existing.parentElement === host.el);
     if (placedRight) return;
     if (existing) existing.remove();
@@ -123,10 +157,10 @@
       img.src = browser.runtime.getURL("icons/icon-48.png");
       img.alt = "Summarize";
       btn.appendChild(img);
-    } else if (buttonStyle === "tldw") {
-      btn.classList.add("yapsum-btn-tldw");
+    } else if (buttonStyle === "tldw" || buttonStyle === "sum") {
+      btn.classList.add("yapsum-btn-tldw"); // same small-pill scale for both
       btn.setAttribute("aria-label", "Summarize");
-      btn.textContent = "TL;DW";
+      btn.textContent = buttonStyle === "sum" ? "Sum" : "TL;DW";
     } else {
       btn.textContent = "Summarize";
     }
@@ -134,6 +168,7 @@
     const mobile = location.hostname === "m.youtube.com";
     if (mobile) btn.classList.add("yapsum-btn-mrow"); // compact, matches mweb row scale
     if (host.place === "after") host.el.insertAdjacentElement("afterend", btn);
+    else if (host.place === "before") host.el.insertAdjacentElement("beforebegin", btn);
     else host.el[host.place](btn);
     console.log(`${LOG} button ${host.place} <${host.el.tagName.toLowerCase()}>`, {
       dOwner: !!document.querySelector("ytd-watch-metadata #owner"),
