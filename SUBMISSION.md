@@ -85,6 +85,43 @@ transmitted to the developer; there is no backend.
 > paste an API key (e.g. a free Google Gemini key via the OpenAI-compatible base
 > URL preset), open any YouTube video, and click **Summarize**.
 
+## 0.5.2 version submission (2026-07-15)
+
+**Release notes (paste into the version's "Release notes" field):**
+
+> Panel and Shorts update. No permission changes.
+>
+> - The summary panel is now movable and resizable on desktop: drag the title
+>   bar to move it, drag any edge or corner to resize it. Clicking the title
+>   bar still collapses it, and it remembers its spot as you browse.
+> - New setting "Collapse in place": the panel folds up to just its title bar
+>   right where it sits, instead of docking to the bottom corner.
+> - New setting: an optional Summarize button on Shorts (off by default), a
+>   round button in the Shorts action rail. Note: many Shorts have no
+>   captions; those cannot be summarized.
+> - Summarizing a Short from the extension menu now works whenever the Short
+>   has captions (the old blanket refusal is gone).
+
+**Reviewer notes delta (prepend to the standing notes above):**
+
+> Changes in 0.5.2 vs 0.5.1 are UI-only; full diff:
+> https://github.com/NaLG/yt-sum/compare/fc5723a...08bcc40
+>
+> - Summary panel is now movable/resizable on desktop: pointer-event drag on
+>   the panel title bar plus edge/corner resize grips, all in
+>   src/content/content.js and content.css. No new APIs.
+> - New collapseInPlace setting (options page): folds the panel in place
+>   instead of docking it to the corner.
+> - New shortsButton setting (default OFF): a round Summarize button in the
+>   Shorts action rail; the extension-menu summarize path now also works on
+>   Shorts with captions.
+> - Manifest change: version only. No new permissions, hosts, or APIs.
+>
+> Quick test without any API key: open a YouTube video, click Summarize; the
+> panel appears (a "no API key" error is fine) and can be dragged by its
+> title bar and resized from its edges and corners. The two new settings are
+> on the options page.
+
 ## Screenshots to attach
 
 - Desktop: the Summarize button left of the like control + a rendered summary panel.
