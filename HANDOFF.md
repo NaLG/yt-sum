@@ -16,7 +16,20 @@ LLM API key. No backend, no tracking.
   return-youtube-summary@nalg.dev, CSS .yapsum-* classes, storage keys, local
   dir / npm name yap-sum.
 
-## CURRENT STATE (2026-07-11): STORE IDENTITY RESOLVED, v0.5.0 listed
+## CURRENT STATE (2026-07-15): 0.5.1 LIVE on AMO, 0.5.2 built and handed off
+
+0.5.1 approved and public on the listing (verified 2026-07-15). 0.5.2 is
+committed, pushed, gate-green (all 6 suites headless), built as
+dist/return_youtube_summary-0.5.2.zip, release notes + reviewer notes ready
+in SUBMISSION.md ("0.5.2 version submission"); the user was submitting it
+manually via the Hub at session close. NEXT SESSION: verify 0.5.2 appears on
+the listing (Manage Status & Versions or the public page), then work the
+remaining queue below (icon, screenshots, privacy re-paste, store-install
+verification). 0.5.2 contents: shorts opt-in rail button, movable/resizable
+panel (desktop), collapseInPlace setting, run-all release gate, AGPL-3.0
+relicense (repo aligned to the listing; was MIT).
+
+## PRIOR STATE (2026-07-11): store identity resolved, v0.5.0 listed
 
 The fresh "Submit a New Add-on" won: the live listing is
 return-youtube-summary@nalg.dev at 0.5.0 (repo manifest synced). The OLD
@@ -59,7 +72,7 @@ the playback capture grabs the player's own caption fetch on shorts too,
 whenever the short has captions (many don't, especially music/meme shorts).
 Machine-verified both sites 2026-07-11: captions-intercept, 23 segments, via
 test/probe-shorts-desync.mjs (emulator) and the npm-test shorts suite.
-Shipped in the working tree (still uncommitted, targets 0.5.2):
+Shipped in 0.5.2 (committed 7571c33):
 
 - Default stays NO button on /shorts/ (spotty caption coverage; a button
   that often fails is worse than none). The popup path still summarizes
@@ -104,24 +117,28 @@ Emulator lessons (hard-won, do not relearn):
 
 ## NEXT work items (user-approved queue)
 
-1. DONE 2026-07-12: 0.5.1 submitted listed via `web-ext sign --channel=listed`
-   (in approval; visible in the Hub), privacy policy re-pasted. Once live:
-   install from the store page on BOTH phone and desktop (uninstall the old
-   sideload first on the phone, its id differs, it will never update) and
-   verify the fresh-install UX: slim two-host install prompt, then ONE Allow
-   doorhanger on the first Test connection / Save.
+1. 0.5.1 submitted 2026-07-12 via `web-ext sign --channel=listed`, APPROVED
+   and live 2026-07-15. STILL OPEN: install from the store page on BOTH
+   phone and desktop (uninstall the old sideload first on the phone, its id
+   differs, it will never update) and verify the fresh-install UX: slim
+   two-host install prompt, then ONE Allow doorhanger on the first Test
+   connection / Save.
 2. Product page cosmetics: upload the listing icon (src/icons/icon-128.png,
    manual on Edit Product Page, AMO ignores manifest icons); screenshots
    (docs/mobile-summarize-button.png is STALE, it predates the left-of-like
    placement; capture fresh desktop + phone shots); homepage and support-site
    fields (github repo) can be added there any time.
-3. README: replace "coming to addons.mozilla.org" with the live listing link.
+3. DONE 2026-07-15: README links the live listing (and its feature list
+   covers the 0.5.2 panel/shorts additions).
 4. Support email, later, optional: support@nalg.dev via Cloudflare Email
    Routing forwarding to a personal inbox. Do not REPLY from the personal
    address (de-pseudonymizes); answer on GitHub issues instead.
-5. Ship 0.5.2 with the shorts opt-in once the user signs off on the working
-   tree: commit, bump manifest version, npm test green, Android placement
-   pass (or the shorts probe), then web-ext sign --channel=listed.
+5. DONE 2026-07-15 (pending Hub confirmation): 0.5.2 committed (7571c33 +
+   08bcc40), full npm test green headless, built, submission notes in
+   SUBMISSION.md; user submitted manually via the Hub (web-ext sign creds
+   were not at hand this session). Verify the version shows in the Hub next
+   session. Also new this release: repo relicensed AGPL-3.0-only (456a06a)
+   to match the listing; keep AGPL selected on future version uploads.
 
 ## Version bookkeeping
 
