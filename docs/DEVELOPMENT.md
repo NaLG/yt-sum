@@ -8,22 +8,42 @@ transcript-extraction deep dive is [EXTRACTION.md](EXTRACTION.md).
 
 ```sh
 npm install
-npm run lint                         # web-ext lint (0 errors)
+npm test                             # RELEASE GATE: lint + every desktop suite below,
+                                     #   sequentially, one summary table, exit 0 = ship
+npm run test:fast                    # same gate minus the two slow suites (end-to-end,
+                                     #   live extraction), the inner-loop check
 npm run run:desktop                  # launch in desktop Firefox on a test video
+npm run build                        # -> dist/<name>-<version>.zip
+```
+
+Individual suites (all deterministic: real assertions, exit codes, no
+human-in-the-loop judgment):
+
+```sh
 node test/smoke-full.mjs [VIDEO_ID]  # AUTHORITATIVE full path: click → extract →
                                      #   (mock LLM) → rendered summary → follow-up
 YAPSUM_CHUNK=1 node test/smoke-full.mjs   # exercise the long-video chunking path
 node test/smoke-options.mjs          # settings page
-node test/smoke-ui.mjs               # button injection
+node test/smoke-ui.mjs               # button injection (subsumed by placement; kept for triage)
 node test/webext-validate.mjs        # extraction-only, in real Firefox
 node test/smoke-placement.mjs        # button placement + all styles, geometric asserts
 node test/smoke-placement.mjs --target firefox-android   # same on the emulator (mobile site)
-npm run build                        # -> dist/<name>-<version>.zip
+node test/smoke-shorts.mjs           # shorts button: none by default, opt-in round rail button
+node test/probe-shorts-desync.mjs    # emulator probe: mobile shorts rail button, extraction,
+                                     #   and player tap health after summarize
 ```
 
 Tests run the **real** source inside a normal Firefox via `web-ext` (never
 WebDriver, YouTube detects and blocks marionette) and relay results to a
-localhost server.
+localhost server. Rendering evidence: suites that capture the viewport save
+PNGs to `test/artifacts/` (gitignored), advisory screenshots for release
+review; the assertions are the gate.
+
+`YAPSUM_HEADLESS=1` makes every desktop suite pass `-headless` to Firefox.
+Use it whenever the macOS session is locked (screen off / away from the
+machine): headed Firefox cannot start without WindowServer access and web-ext
+fails with ECONNREFUSED. Firefox's headless UA is identical to headed, so
+YouTube serves the same pages.
 
 ### Android (device or device-free emulator)
 

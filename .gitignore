@@ -1,6 +1,7 @@
 node_modules/
 dist/
 web-ext-artifacts/
+test/artifacts/
 *.log
 .DS_Store
 src/.amo-upload-uuid

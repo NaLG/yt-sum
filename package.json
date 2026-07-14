@@ -13,6 +13,12 @@
     "emulator": "sh scripts/android-emulator.sh up",
     "emulator:down": "sh scripts/android-emulator.sh down",
     "build": "web-ext build --source-dir src --artifacts-dir dist --overwrite-dest",
+    "test": "node test/run-all.mjs",
+    "test:fast": "node test/run-all.mjs --fast",
+    "test:placement": "node test/smoke-placement.mjs",
+    "test:shorts": "node test/smoke-shorts.mjs",
+    "test:options": "node test/smoke-options.mjs",
+    "test:full": "node test/smoke-full.mjs",
     "test:extract": "node test/webext-validate.mjs",
     "test:android": "node test/webext-validate.mjs --target firefox-android"
   },

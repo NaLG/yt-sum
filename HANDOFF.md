@@ -48,6 +48,59 @@ to existing users. NOTE for the next Hub visit: PRIVACY.md's permissions
 paragraph changed (nothing granted at install); re-paste it into the AMO
 privacy field.
 
+## DONE 2026-07-11 (evening): shorts pivot, opt-in rail button (UNRELEASED)
+
+Field discovery on the store build (phone): the button DOES inject on mobile
+shorts (the like-button hunt finds the action rail) and summarizing WORKED.
+The earlier "shorts expose no transcript surface at all" conclusion was too
+broad: it covered the desktop UI surfaces and the reconstruction paths, but
+the playback capture grabs the player's own caption fetch on shorts too,
+whenever the short has captions (many don't, especially music/meme shorts).
+Machine-verified both sites 2026-07-11: captions-intercept, 23 segments, via
+test/probe-shorts-desync.mjs (emulator) and the npm-test shorts suite.
+Shipped in the working tree (still uncommitted, targets 0.5.2):
+
+- Default stays NO button on /shorts/ (spotty caption coverage; a button
+  that often fails is worse than none). The popup path still summarizes
+  shorts; its old hard refusal ("Shorts don't have transcripts") was wrong
+  and is gone. Failures show a captions-specific hint.
+- New shortsButton setting (options page, instant-apply, default off): a
+  round logo button in the shorts action rail directly above the like
+  control, 48px desktop / 40px mobile (.yapsum-btn-shorts). It ignores
+  buttonStyle (only a circle fits the rail); watch pages keep the user's
+  chosen style, default full "Summarize".
+- The user's field report of broken tap-to-pause after summarizing a short
+  could NOT be reproduced (probe drives both the playing and the paused
+  scenario, real extraction, then taps). Their "layout changed when I
+  disabled the plugin" observation persisted after re-enable, so it was
+  YouTube variant roulette, not us. If tap breakage returns, suspect the
+  open panel first: the mobile bottom sheet can cover the reel center.
+- Panel drag + resize (desktop www only): dragging the TL;DW title bar
+  moves the panel; the left/right/bottom edges and all four corners
+  resize it (grips in content.css, wirePanelBar/dragSession in
+  content.js). A press that travels under 4px still counts as the
+  collapse tap. Geometry lives per tab (survives SPA navigation, never
+  persisted); box-sizing on the panel is border-box so resize math and
+  getBoundingClientRect agree. The mobile bottom sheet is untouched.
+- New collapseInPlace setting (options page, instant-apply, default off):
+  the title-bar tap folds the panel up to just its header where it sits,
+  instead of docking the bottom-right pill. setCollapsed owns the mode
+  switch (sheds the drag/resize inline geometry for the corner dock,
+  keeps position/width in place mode); an in-place-folded bar can still
+  be dragged. Drag, resize, and both collapse modes are machine-verified
+  in test/smoke-full.mjs via synthetic PointerEvents.
+
+Emulator lessons (hard-won, do not relearn):
+- `adb shell input tap` is SWALLOWED while a web-ext RDP session is
+  attached; a 1px `input swipe x y x+1 y+1 60` delivers as a tap always.
+- A fresh Fenix profile blocks autoplay, so m.youtube.com shorts sit paused
+  at a poster with the (only) video element parked OFF-viewport until
+  playback starts; muted video.play() (what kickMobilePlayback does) starts
+  it legally without a user gesture.
+- YouTube's reel overlay ACCEPTS untrusted synthetic taps for pause, so
+  tap-health is testable without OS input; prefer clicking its own visible
+  "Play" aria-label button for the resume direction.
+
 ## NEXT work items (user-approved queue)
 
 1. DONE 2026-07-12: 0.5.1 submitted listed via `web-ext sign --channel=listed`
@@ -65,6 +118,9 @@ privacy field.
 4. Support email, later, optional: support@nalg.dev via Cloudflare Email
    Routing forwarding to a personal inbox. Do not REPLY from the personal
    address (de-pseudonymizes); answer on GitHub issues instead.
+5. Ship 0.5.2 with the shorts opt-in once the user signs off on the working
+   tree: commit, bump manifest version, npm test green, Android placement
+   pass (or the shorts probe), then web-ext sign --channel=listed.
 
 ## Version bookkeeping
 
@@ -114,10 +170,19 @@ web-ext sign --api-key=<issuer> --api-secret=<secret> --channel=unlisted --sourc
 Canonical command list lives in docs/DEVELOPMENT.md. The non-negotiables:
 
 ```
-node test/smoke-full.mjs [VIDEO_ID]      # authoritative end-to-end (mock LLM)
-node test/smoke-placement.mjs            # button placement + all 4 styles, geometric asserts
-node test/smoke-placement.mjs --target firefox-android   # same on the emulator (real m.youtube.com)
+npm test                                 # release gate: lint + options + placement + shorts
+                                         #   + end-to-end + live extraction, one summary table
+npm run test:fast                        # inner loop: skips the two slow suites
+node test/smoke-placement.mjs --target firefox-android   # mobile placement (real m.youtube.com)
 ```
+
+`npm test` green is the desktop ship bar; the Android placement run stays a
+separate manual step (emulator). test/smoke-shorts.mjs guards the shorts
+button policy: no button by default (plus decoy cleanup), round logo rail
+button when the shortsButton setting opts in. Screenshot artifacts land in
+test/artifacts/ (gitignored). YAPSUM_HEADLESS=1 runs every desktop suite
+headless; REQUIRED while the macOS session is locked, headed Firefox cannot
+start then and web-ext dies with ECONNREFUSED.
 
 Tests run the real source inside a normal Firefox via web-ext (never
 WebDriver; YouTube detects and blocks marionette). Mobile-visible changes DO

@@ -141,10 +141,13 @@ async function load() {
   const stored = await browser.storage.local.get(FIELDS);
   const cfg = { ...DEFAULTS, ...stored };
   for (const f of FIELDS) if ($(f)) $(f).value = cfg[f];
-  const { buttonStyle } = await browser.storage.local.get({ buttonStyle: "text" });
+  const { buttonStyle, shortsButton, collapseInPlace } =
+    await browser.storage.local.get({ buttonStyle: "text", shortsButton: false, collapseInPlace: false });
   const styleVal = ["icon", "tldw", "sum"].includes(buttonStyle) ? buttonStyle : "text";
   const radio = document.querySelector(`input[name="buttonStyle"][value="${styleVal}"]`);
   if (radio) radio.checked = true;
+  $("shortsButton").checked = !!shortsButton;
+  $("collapseInPlace").checked = !!collapseInPlace;
   // Seed the dropdown with curated suggestions immediately; a live load
   // refreshes them when the user clicks "Load models" (or Test connection).
   fillModelList(FALLBACK_MODELS[cfg.provider] || []);
@@ -257,6 +260,16 @@ for (const r of document.querySelectorAll('input[name="buttonStyle"]')) {
     setStatus("Button style saved.", "ok");
   });
 }
+// Same instant-apply treatment for the Shorts opt-in.
+$("shortsButton").addEventListener("change", async () => {
+  await browser.storage.local.set({ shortsButton: $("shortsButton").checked });
+  setStatus($("shortsButton").checked ? "Shorts button on." : "Shorts button off.", "ok");
+});
+// And for the collapse mode; it takes effect on the next fold.
+$("collapseInPlace").addEventListener("change", async () => {
+  await browser.storage.local.set({ collapseInPlace: $("collapseInPlace").checked });
+  setStatus($("collapseInPlace").checked ? "Panel collapses in place." : "Panel collapses to the corner.", "ok");
+});
 $("test").addEventListener("click", testConnection);
 // Key is visible by default so pasting/editing (e.g. trimming stray text off a
 // pasted string) is easy; the toggle masks it for shoulder-surfing / sharing.

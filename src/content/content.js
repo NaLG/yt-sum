@@ -18,6 +18,13 @@
     return !!currentVideoId();
   }
 
+  // Shorts are a pathname (/shorts/<id>) on the same origin, not a separate
+  // host, and SPA navigation keeps this script alive across watch<->shorts,
+  // so the exclusion must be a runtime check, not a manifest match pattern.
+  function isShortsPage() {
+    return location.pathname.startsWith("/shorts/");
+  }
+
   // ---- self-test hook (manual diagnostic) ------------------------------------
   // Loading a watch URL with #yapsum-selftest makes the content script run the
   // extractor immediately and print a tagged, machine-readable line to the
@@ -114,24 +121,46 @@
 
   // Button style, set on the options page: "text" (default), "sum" (small
   // Sum pill), "tldw" (small TL;DW pill), or "icon" (compact round chip).
+  // shortsButton (default OFF) opts in to a round logo button on /shorts/;
+  // it ignores buttonStyle because only a circle fits the shorts action rail.
   // Cached here; storage.onChanged live-swaps the button in place.
   const normStyle = (v) => (v === "icon" || v === "tldw" || v === "sum" ? v : "text");
   let buttonStyle = "text";
-  browser.storage.local.get({ buttonStyle: "text" }).then((s) => {
-    if (normStyle(s.buttonStyle) !== buttonStyle) {
-      buttonStyle = normStyle(s.buttonStyle);
+  let shortsButton = false;
+  // collapseInPlace (default OFF): the title-bar tap folds the panel up to
+  // just its header where it sits, instead of docking a pill in the bottom
+  // corner. Desktop-only in effect (setCollapsed gates on panelAdjustable).
+  let collapseInPlace = false;
+  browser.storage.local.get({ buttonStyle: "text", shortsButton: false, collapseInPlace: false }).then((s) => {
+    const changed = normStyle(s.buttonStyle) !== buttonStyle || !!s.shortsButton !== shortsButton;
+    buttonStyle = normStyle(s.buttonStyle);
+    shortsButton = !!s.shortsButton;
+    collapseInPlace = !!s.collapseInPlace;
+    if (changed) {
       document.getElementById("yapsum-btn")?.remove();
       ensureButton();
     }
   }).catch(() => {});
   browser.storage.onChanged.addListener((ch, area) => {
-    if (area !== "local" || !ch.buttonStyle) return;
-    buttonStyle = normStyle(ch.buttonStyle.newValue);
+    if (area !== "local") return;
+    if (ch.collapseInPlace) collapseInPlace = !!ch.collapseInPlace.newValue; // next fold picks it up
+    if (!ch.buttonStyle && !ch.shortsButton) return; // only the button needs a rebuild
+    if (ch.buttonStyle) buttonStyle = normStyle(ch.buttonStyle.newValue);
+    if (ch.shortsButton) shortsButton = !!ch.shortsButton.newValue;
     document.getElementById("yapsum-btn")?.remove();
     ensureButton();
   });
 
   function ensureButton() {
+    // Shorts are OFF by default: caption coverage there is spotty (no button
+    // is better than one that often fails), and the standard chip doesn't fit
+    // the vertical action rail. The shortsButton setting opts in to a round
+    // logo button styled after the rail's own circles; extraction itself works
+    // on shorts via the playback capture (machine-verified on m.youtube.com,
+    // captions-intercept, see test/probe-shorts-desync.mjs). The remove()
+    // covers SPA navigation carrying a live watch-page button along.
+    const onShorts = isShortsPage();
+    if (onShorts && !shortsButton) { document.getElementById("yapsum-btn")?.remove(); return; }
     if (!isWatchPage()) return;
     const host = buttonHost();
     if (!host) return;
@@ -150,8 +179,9 @@
     btn.id = "yapsum-btn";
     btn.className = "yapsum-btn";
     btn.title = "Summarize this video";
-    if (buttonStyle === "icon") {
+    if (onShorts || buttonStyle === "icon") {
       btn.classList.add("yapsum-btn-icon");
+      if (onShorts) btn.classList.add("yapsum-btn-shorts"); // circle sized to the rail
       btn.setAttribute("aria-label", "Summarize");
       const img = document.createElement("img");
       img.src = browser.runtime.getURL("icons/icon-48.png");
@@ -176,7 +206,7 @@
       mOwner: !!document.querySelector("ytm-slim-owner-renderer"),
       slimBar: !!document.querySelector("ytm-slim-video-action-bar-renderer"),
     });
-    if (mobile && buttonStyle === "text") {
+    if (mobile && !onShorts && buttonStyle === "text") {
       // Mobile rows are tight (the merged variant packs avatar + Subscribed +
       // all the action icons into one row). If the full label overflows the
       // row we landed in, collapse it to "Sum" rather than wrapping.
@@ -432,7 +462,7 @@
 
   async function onSummarizeClick() {
     const panel = openPanel();
-    panel.classList.remove("yapsum-collapsed"); // re-summarizing always expands
+    setCollapsed(panel, false); // re-summarizing always expands
     const cached = cachedSummary(currentVideoId());
     if (cached) {
       setPanel(panel, ""); // clears any error/streaming state
@@ -458,12 +488,17 @@
     try {
       transcript = await getTranscript();
     } catch (e) {
-      // m.youtube.com exposes NO transcript surface at all (no panel UI, no
-      // getTranscriptEndpoint, PoToken-gated timedtext, see test/probe-mobile.mjs).
-      // The desktop site inside Firefox for Android works fully.
-      const hint = location.hostname === "m.youtube.com"
-        ? "\n\nTry playing the video for a few seconds, then tap Summarize again. If that still fails, tap the ⋮ menu, choose \"Desktop site\", and retry."
-        : "";
+      // m.youtube.com WATCH pages expose no transcript surface (no panel UI, no
+      // getTranscriptEndpoint, PoToken-gated timedtext, see test/probe-mobile.mjs);
+      // playback capture is the only mobile source, so the hints push toward
+      // playing. On shorts the likely cause is simpler: many have no captions
+      // at all (when they do, playback capture works on both sites, verified
+      // in test/probe-shorts-desync.mjs).
+      const hint = isShortsPage()
+        ? "\n\nLet the short play for a few seconds, then try again. Note that many Shorts have no captions at all; those can't be summarized."
+        : location.hostname === "m.youtube.com"
+          ? "\n\nTry playing the video for a few seconds, then tap Summarize again. If that still fails, tap the ⋮ menu, choose \"Desktop site\", and retry."
+          : "";
       await showError(panel, `Couldn't get a transcript for this video.${hint}\n\n${e.message}`);
       return;
     } finally {
@@ -664,6 +699,147 @@
     });
   }
 
+  // ---- UI: panel move/resize (desktop) ---------------------------------------
+  // Dragging the title bar moves the panel; a press that travels less than
+  // DRAG_SLOP px still counts as the collapse/expand tap. The left, right and
+  // bottom edges plus all four corners resize (the top edge IS the bar).
+  // m.youtube.com keeps the plain tap-to-collapse bottom sheet: no drag, no
+  // grips. Geometry survives panel rebuilds (SPA navigation) for the life of
+  // the tab; width/height stay null until that axis is actually resized, so
+  // an only-moved panel keeps its natural size and viewport height cap.
+  const PANEL_MIN_W = 280, PANEL_MIN_H = 140, DRAG_SLOP = 4;
+  const panelAdjustable = () => location.hostname !== "m.youtube.com";
+  let panelGeom = null; // { left, top, width|null, height|null }
+
+  function applyPanelGeom(panel) {
+    const g = panelGeom;
+    if (!g || !panelAdjustable()) return;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    if (g.width != null) g.width = Math.max(PANEL_MIN_W, Math.min(g.width, vw - 16));
+    if (g.height != null) g.height = Math.max(PANEL_MIN_H, Math.min(g.height, vh - 16));
+    // Keep enough of the bar on screen to grab the panel back.
+    const w = g.width != null ? g.width : Math.min(420, vw - 32);
+    g.left = Math.max(80 - w, Math.min(g.left, vw - 80));
+    g.top = Math.max(0, Math.min(g.top, vh - 44));
+    panel.style.left = g.left + "px";
+    panel.style.top = g.top + "px";
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
+    panel.style.width = g.width != null ? g.width + "px" : "";
+    // A folded panel must stay bar-high, so the explicit height only comes
+    // back on expand (setCollapsed(false) re-runs this).
+    if (g.height != null && !panel.classList.contains("yapsum-collapsed")) {
+      panel.style.height = g.height + "px";
+      panel.style.maxHeight = "none"; // an explicit user height beats the viewport cap
+    }
+  }
+
+  // Collapse is a mode switch, not just a class. Corner mode (default) docks
+  // a compact pill bottom-right: the inline geometry drag/resize left behind
+  // would beat the dock CSS, so it is shed here and re-applied on expand.
+  // In-place mode (collapseInPlace setting) keeps position and width and only
+  // folds the height up to the bar. Mobile keeps the plain class toggle.
+  function setCollapsed(panel, collapsed) {
+    const inplace = collapsed && collapseInPlace && panelAdjustable();
+    panel.classList.toggle("yapsum-collapsed", collapsed);
+    panel.classList.toggle("yapsum-inplace", inplace);
+    if (!panelAdjustable()) return;
+    if (!collapsed) { applyPanelGeom(panel); return; }
+    if (inplace) {
+      panel.style.height = "";
+      panel.style.maxHeight = "";
+    } else {
+      for (const p of ["left", "top", "right", "bottom", "width", "height", "maxHeight"]) panel.style[p] = "";
+    }
+  }
+
+  // One pointer-drag session: capture on `el`, call step(dx, dy) per move once
+  // past the slop, then done(moved) on release. Shared by bar drag and grips.
+  function dragSession(el, e, step, done) {
+    const sx = e.clientX, sy = e.clientY;
+    let moved = false;
+    const onMove = (ev) => {
+      if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < DRAG_SLOP) return;
+      moved = true;
+      step(ev.clientX - sx, ev.clientY - sy);
+    };
+    const onEnd = () => {
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onEnd);
+      el.removeEventListener("pointercancel", onEnd);
+      if (done) done(moved);
+    };
+    // Capture keeps the stream on `el` when the cursor outruns the panel.
+    // Synthetic PointerEvents (tests) carry no active pointer id and make
+    // this throw; without capture, moves dispatched at `el` still arrive.
+    try { el.setPointerCapture(e.pointerId); } catch {}
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerup", onEnd);
+    el.addEventListener("pointercancel", onEnd);
+  }
+
+  function wirePanelBar(panel, bar, closeBtn) {
+    // Click vs drag: pointer capture keeps the stream on the bar and the
+    // browser still fires the click there after release, so a real drag must
+    // swallow that click or every move would also toggle the collapse.
+    let swallowClick = false;
+    bar.addEventListener("click", (e) => {
+      if (closeBtn.contains(e.target)) return;
+      if (swallowClick) { swallowClick = false; return; }
+      setCollapsed(panel, !panel.classList.contains("yapsum-collapsed"));
+    });
+    if (!panelAdjustable()) return;
+    bar.style.touchAction = "none"; // touch-drags move the panel, not the page
+
+    bar.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || closeBtn.contains(e.target)) return;
+      // The corner pill is tap-to-expand only; an in-place-folded bar can
+      // still be dragged around (applyPanelGeom skips height while folded).
+      if (panel.classList.contains("yapsum-collapsed") && !panel.classList.contains("yapsum-inplace")) return;
+      const r = panel.getBoundingClientRect();
+      dragSession(bar, e, (dx, dy) => {
+        panelGeom = {
+          width: null, height: null, ...panelGeom,
+          left: r.left + dx, top: r.top + dy,
+        };
+        applyPanelGeom(panel);
+      }, (moved) => {
+        swallowClick = moved;
+        setTimeout(() => { swallowClick = false; }, 0); // the click, if any, fires first
+      });
+    });
+
+    for (const dir of ["w", "e", "s", "nw", "ne", "sw", "se"]) {
+      const grip = document.createElement("div");
+      grip.className = `yapsum-rs yapsum-rs-${dir}`;
+      grip.addEventListener("pointerdown", (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        const r = panel.getBoundingClientRect();
+        dragSession(grip, e, (dx, dy) => {
+          // Only the dragged axis gets an explicit size; the opposite edge
+          // (left for an e-resize, bottom for an n-resize, ...) stays pinned.
+          const g = {
+            left: r.left, top: r.top,
+            width: panelGeom ? panelGeom.width : null,
+            height: panelGeom ? panelGeom.height : null,
+          };
+          if (dir.includes("e")) g.width = r.width + dx;
+          if (dir.includes("w")) g.width = r.width - dx;
+          if (dir.includes("s")) g.height = r.height + dy;
+          if (dir.includes("n")) g.height = r.height - dy;
+          if (g.width != null) g.width = Math.max(PANEL_MIN_W, Math.min(g.width, window.innerWidth - 16));
+          if (g.height != null) g.height = Math.max(PANEL_MIN_H, Math.min(g.height, window.innerHeight - 16));
+          if (dir.includes("w")) g.left = r.right - g.width;
+          if (dir.includes("n")) g.top = r.bottom - g.height;
+          panelGeom = g;
+          applyPanelGeom(panel);
+        });
+      });
+      panel.appendChild(grip);
+    }
+  }
+
   // ---- UI: result panel -----------------------------------------------------
 
   function openPanel() {
@@ -674,14 +850,14 @@
     panel.className = "yapsum-panel";
     const bar = document.createElement("div");
     bar.className = "yapsum-panel-bar";
-    // Title is the collapse/expand toggle: tapping it folds the panel to a
+    // The bar is the collapse/expand toggle: a tap/click folds the panel to a
     // compact bar at the bottom (summary + Q&A preserved, so re-opening is
     // instant, no re-fetch). Only ✕ removes it (then Summarize rebuilds).
+    // On desktop the same bar is also the drag handle, see wirePanelBar.
     const title = document.createElement("span");
     title.className = "yapsum-panel-title";
     title.textContent = "TL;DW";
     title.title = "Collapse / expand";
-    title.addEventListener("click", () => panel.classList.toggle("yapsum-collapsed"));
     const close = document.createElement("button");
     close.className = "yapsum-panel-close";
     close.textContent = "✕";
@@ -691,7 +867,9 @@
     const body = document.createElement("div");
     body.className = "yapsum-panel-body";
     panel.append(bar, body);
+    wirePanelBar(panel, bar, close);
     document.body.appendChild(panel);
+    applyPanelGeom(panel); // restore this tab's dragged/resized geometry
     return panel;
   }
 

@@ -205,6 +205,9 @@ function webExtArgs(videoId, profileDir) {
     ...common,
     "--start-url", `https://www.youtube.com/watch?v=${videoId}`,
     "--firefox", FIREFOX, "--firefox-profile", profileDir, "--profile-create-if-missing",
+    // Headed Firefox can't start while the macOS session is locked; headless
+    // renders identically (same UA) and keeps the suite runnable unattended.
+    ...(process.env.YAPSUM_HEADLESS === "1" ? ["--arg=-headless"] : []),
   ];
 }
 

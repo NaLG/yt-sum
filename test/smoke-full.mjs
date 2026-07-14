@@ -202,6 +202,67 @@ writeFileSync(
          if (!collapseOk) collapseErr = JSON.stringify({ collapsed, expanded, preserved });
        } catch (e) { collapseErr = String(e); }
 
+       // Drag + resize (desktop): a bar drag of (60,40) must move the panel
+       // exactly that far WITHOUT toggling collapse, and dragging the SE grip
+       // by (40,30) must grow it exactly that much. Synthetic PointerEvents
+       // carry no active pointer id so dragSession skips pointer capture; the
+       // listeners sit on the bar/grip, so dispatching at them still works.
+       let dragOk = false, dragErr = null;
+       try {
+         const panel = document.getElementById("yapsum-panel");
+         const bar = panel.querySelector(".yapsum-panel-bar");
+         const pe = (el, type, x, y) =>
+           el.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 7, button: 0, clientX: x, clientY: y }));
+         const r0 = panel.getBoundingClientRect();
+         pe(bar, "pointerdown", r0.left + 50, r0.top + 15);
+         pe(bar, "pointermove", r0.left + 110, r0.top + 55);
+         pe(bar, "pointerup", r0.left + 110, r0.top + 55);
+         await sleep(60); // let the drag's click-swallow timeout clear
+         const r1 = panel.getBoundingClientRect();
+         const movedX = Math.round(r1.left - r0.left), movedY = Math.round(r1.top - r0.top);
+         const stayedOpen = !panel.classList.contains("yapsum-collapsed");
+         const grip = panel.querySelector(".yapsum-rs-se");
+         const g = grip.getBoundingClientRect();
+         pe(grip, "pointerdown", g.left + 4, g.top + 4);
+         pe(grip, "pointermove", g.left + 44, g.top + 34);
+         pe(grip, "pointerup", g.left + 44, g.top + 34);
+         await sleep(60);
+         const r2 = panel.getBoundingClientRect();
+         const grewW = Math.round(r2.width - r1.width), grewH = Math.round(r2.height - r1.height);
+         dragOk = movedX === 60 && movedY === 40 && stayedOpen && grewW === 40 && grewH === 30;
+         if (!dragOk) dragErr = JSON.stringify({ movedX, movedY, stayedOpen, grewW, grewH });
+       } catch (e) { dragErr = String(e); }
+
+       // Collapse-in-place (collapseInPlace setting): with the panel at the
+       // custom position/size the drag test left it, folding must keep
+       // left/top/width and only shrink the height to the bar; expanding must
+       // restore the exact height. Runs right here because the inline
+       // geometry is what corner mode sheds and in-place mode must keep.
+       let inplaceOk = false, inplaceErr = null;
+       try {
+         await browser.storage.local.set({ collapseInPlace: true });
+         await sleep(120); // let storage.onChanged reach the content script
+         const panel = document.getElementById("yapsum-panel");
+         const title = panel.querySelector(".yapsum-panel-title");
+         const bodyEl = panel.querySelector(".yapsum-panel-body");
+         const r0 = panel.getBoundingClientRect();
+         title.click(); await sleep(120);
+         const rc = panel.getBoundingClientRect();
+         const folded = panel.classList.contains("yapsum-collapsed") && getComputedStyle(bodyEl).display === "none";
+         const stayedPut = Math.round(rc.left) === Math.round(r0.left) && Math.round(rc.top) === Math.round(r0.top)
+           && Math.round(rc.width) === Math.round(r0.width) && rc.height < r0.height - 50;
+         title.click(); await sleep(120);
+         const re = panel.getBoundingClientRect();
+         const restored = !panel.classList.contains("yapsum-collapsed")
+           && Math.round(re.height) === Math.round(r0.height) && Math.round(re.left) === Math.round(r0.left);
+         await browser.storage.local.set({ collapseInPlace: false });
+         inplaceOk = folded && stayedPut && restored;
+         if (!inplaceOk) inplaceErr = JSON.stringify({ folded, stayedPut, restored,
+           r0: [r0.left, r0.top, r0.width, r0.height].map(Math.round),
+           rc: [rc.left, rc.top, rc.width, rc.height].map(Math.round),
+           re: [re.left, re.top, re.width, re.height].map(Math.round) });
+       } catch (e) { inplaceErr = String(e); }
+
        let bgLog = null;
        try {
          const dbg = await browser.runtime.sendMessage({ type: "getDebug" });
@@ -212,6 +273,8 @@ writeFileSync(
          bgLog,
          followupOk, followupRendered, followupErr,
          collapseOk, collapseErr,
+         dragOk, dragErr,
+         inplaceOk, inplaceErr,
          ok: text.includes("SUMMARY_OK"),
          method: document.documentElement.dataset.yapsumMethod || "(unknown)",
          scrapeRows,
@@ -233,6 +296,9 @@ const profileDir = mkdtempSync(join(tmpdir(), "yapsum-ff-"));
 const child = spawn("web-ext", [
   "run", "--source-dir", ext, "--firefox", FIREFOX, "--firefox-profile", profileDir,
   "--profile-create-if-missing", "--start-url", `https://www.youtube.com/watch?v=${VIDEO}`, "--no-reload", "--no-input",
+  // Headed Firefox can't start while the macOS session is locked; headless
+  // renders identically (same UA) and keeps the suite runnable unattended.
+  ...(process.env.YAPSUM_HEADLESS === "1" ? ["--arg=-headless"] : []),
 ], { stdio: DEBUG ? ["ignore", "inherit", "inherit"] : "ignore" });
 
 const report = await new Promise((resolve) => {
@@ -251,6 +317,8 @@ if (CHUNK) console.log("LLM part requests:", JSON.stringify(llm.parts));
 console.log("LLM follow-up request:", JSON.stringify(llm.followup));
 console.log("follow-up:", report.followupOk, "rendered:", report.followupRendered, report.followupErr || "");
 console.log("collapse/expand preserves summary:", report.collapseOk, report.collapseErr || "");
+console.log("bar drag moves + SE grip resizes:", report.dragOk, report.dragErr || "");
+console.log("collapse-in-place keeps position:", report.inplaceOk, report.inplaceErr || "");
 console.log("panel showed:", JSON.stringify(report.panelText || report.error));
 if (!report.ok && report.bgLog) console.log("bg capture log:", JSON.stringify(report.bgLog, null, 1));
 const partChars = llm.parts.reduce((a, p) => a + p.chars, 0);
@@ -270,6 +338,8 @@ const pass =
   report.followupOk === true &&
   report.followupRendered === true &&
   report.collapseOk === true &&
+  report.dragOk === true &&
+  report.inplaceOk === true &&
   llm.followup?.valid &&
   llm.followup?.messages >= 4; // system+transcript+assistant-summary+question
 console.log(

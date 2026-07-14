@@ -121,7 +121,10 @@ const webExtArgs = ANDROID
   ? ["run", "--source-dir", ext, "--target", "firefox-android", "--android-device", DEVICE, "--firefox-apk", FIREFOX_APK]
   : ["run", "--source-dir", ext, "--firefox", FIREFOX,
      "--firefox-profile", mkdtempSync(join(tmpdir(), "yapsum-ffp-")), "--profile-create-if-missing",
-     "--start-url", WATCH_URL, "--no-reload", "--no-input"];
+     "--start-url", WATCH_URL, "--no-reload", "--no-input",
+     // Headed Firefox can't start while the macOS session is locked; headless
+     // renders identically (same UA) and keeps the suite runnable unattended.
+     ...(process.env.YAPSUM_HEADLESS === "1" ? ["--arg=-headless"] : [])];
 const child = spawn("web-ext", webExtArgs, { stdio: ["ignore", "pipe", "pipe"] });
 
 // Android has no --start-url, and content scripts only attach to pages loaded

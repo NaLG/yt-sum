@@ -87,10 +87,42 @@
   height: 20px;
 }
 
+/* Shorts rail placement (opt-in via the shortsButton setting): a round logo
+   chip sized like the rail's own circular buttons, sitting above the like
+   control. Placed after the other variants so its sizing wins them all. */
+.yapsum-btn-shorts.yapsum-btn-icon {
+  width: 48px;
+  min-width: 48px;
+  height: 48px;
+  padding: 0;
+  margin: 0 0 8px;
+  border-radius: 50%;
+}
+.yapsum-btn-shorts.yapsum-btn-icon img {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+}
+/* The mobile rail is tighter than the desktop one. */
+.yapsum-btn-mrow.yapsum-btn-shorts.yapsum-btn-icon {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  margin: 0 0 6px;
+}
+.yapsum-btn-mrow.yapsum-btn-shorts.yapsum-btn-icon img {
+  width: 22px;
+  height: 22px;
+}
+
 .yapsum-panel {
   position: fixed;
   top: 72px;
   right: 16px;
+  /* border-box so the width/height the resize code writes (measured with
+     getBoundingClientRect, border included) mean the same box they came from;
+     content-box would grow the panel 2px per resize. */
+  box-sizing: border-box;
   width: min(420px, calc(100vw - 32px));
   max-height: calc(100vh - 100px);
   display: flex;
@@ -118,6 +150,8 @@
   padding: 10px 14px;
   font-weight: 600;
   border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+  flex-shrink: 0;
+  user-select: none; /* a drag must never start a text selection */
 }
 .yapsum-panel-title {
   flex: 1;
@@ -142,10 +176,15 @@
   line-height: 1;
 }
 
-/* Collapsed: fold away the body + Q&A, dock as a compact bar at the bottom.
-   The panel node stays in the DOM (summary preserved), so tapping the title
-   again restores it instantly with no re-fetch. */
-.yapsum-panel.yapsum-collapsed {
+/* Collapsed: fold away the body + Q&A. The panel node stays in the DOM
+   (summary preserved), so tapping the title again restores it instantly with
+   no re-fetch. Two modes, chosen by the collapseInPlace setting (JS adds
+   .yapsum-inplace and sheds/keeps the drag/resize inline geometry to match,
+   see setCollapsed): the default docks a compact pill bottom-right; in-place
+   keeps position and width and needs no rule of its own, height simply folds
+   to the bar once the body is display:none. :where() keeps the dock rule at
+   two-class specificity so the later mobile override still wins. */
+.yapsum-panel.yapsum-collapsed:where(:not(.yapsum-inplace)) {
   top: auto;
   bottom: 16px;
   height: auto;
@@ -157,9 +196,32 @@
 .yapsum-panel.yapsum-collapsed .yapsum-panel-body,
 .yapsum-panel.yapsum-collapsed .yapsum-ask { display: none; }
 .yapsum-panel.yapsum-collapsed .yapsum-panel-title::after { transform: rotate(-90deg); }
+
+/* Resize grips (desktop only; created by the content script). Invisible
+   strips along the left/right/bottom edges plus all four corners; the top
+   edge has no plain grip because the bar there is the drag/collapse handle.
+   They bleed 4px past the panel so the edge is easy to catch. */
+.yapsum-rs {
+  position: absolute;
+  z-index: 3;
+  touch-action: none;
+}
+.yapsum-rs-w { left: -4px; top: 14px; bottom: 14px; width: 9px; cursor: ew-resize; }
+.yapsum-rs-e { right: -4px; top: 14px; bottom: 14px; width: 9px; cursor: ew-resize; }
+.yapsum-rs-s { bottom: -4px; left: 14px; right: 14px; height: 9px; cursor: ns-resize; }
+.yapsum-rs-nw { left: -4px; top: -4px; width: 16px; height: 16px; cursor: nwse-resize; }
+.yapsum-rs-ne { right: -4px; top: -4px; width: 16px; height: 16px; cursor: nesw-resize; }
+.yapsum-rs-sw { left: -4px; bottom: -4px; width: 16px; height: 16px; cursor: nesw-resize; }
+.yapsum-rs-se { bottom: -4px; right: -4px; width: 16px; height: 16px; cursor: nwse-resize; }
+.yapsum-panel.yapsum-collapsed .yapsum-rs { display: none; }
+
 .yapsum-panel-body {
   padding: 14px 16px;
   overflow-y: auto;
+  /* Fill a user-resized (fixed-height) panel so the ask bar stays pinned to
+     the bottom; in the default auto-height panel flex-grow has no effect. */
+  flex: 1 1 auto;
+  min-height: 0;
   white-space: pre-wrap;
   line-height: 1.5;
   font-size: 14px;
@@ -204,6 +266,7 @@
   gap: 8px;
   padding: 10px 12px;
   border-top: 1px solid rgba(128, 128, 128, 0.2);
+  flex-shrink: 0;
 }
 .yapsum-ask input {
   flex: 1;
