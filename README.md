@@ -17,13 +17,17 @@ you send to the endpoint you chose.
   local model (Ollama / LM Studio).
 - **Follow-up Q&A:** ask questions about the video, based on its transcript.
 - **Long videos** are summarized in parts, then combined into one.
-- **Collapsible panel:** fold the result to a bottom bar and reopen it instantly.
+- **Movable, resizable panel** (desktop): drag the title bar to move it, resize
+  from any edge or corner. Click the title bar to collapse it: to a corner pill,
+  or in place (a settings toggle).
+- **Shorts** (opt-in setting): a round Summarize button in the Shorts action rail.
 - **Safe rendering:** summaries are formatted via `textContent`, never raw HTML.
 
 ## Getting started
 
-1. Install the extension (coming to addons.mozilla.org; until then, build from
-   source via [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)).
+1. [Install the extension from addons.mozilla.org](https://addons.mozilla.org/firefox/addon/return-youtube-summary/)
+   (desktop Firefox and Firefox for Android), or build from source via
+   [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
 2. Click the toolbar icon and open **Settings**: pick a provider and paste an
    API key. New to API keys? The settings page links each provider's key page.
    Google Gemini has a free tier, and local models (Ollama / LM Studio) need no
