@@ -10,7 +10,8 @@ YouTube and summarizes the current video's transcript through the user's own
 LLM API key. No backend, no tracking.
 
 - Product name: Return YouTube Summary. Short mark (icon + panel header): TL;DW.
-- Publisher/display name: nalg. License: MIT. Repo: github.com/NaLG/yt-sum.
+- Publisher/display name: nalg. License: AGPL-3.0-only (repo aligned to the
+  AMO listing 2026-07-15; was MIT). Repo: github.com/NaLG/yt-sum.
 - Internal ids that must NEVER change (the listing is live): manifest gecko.id
   return-youtube-summary@nalg.dev, CSS .yapsum-* classes, storage keys, local
   dir / npm name yap-sum.

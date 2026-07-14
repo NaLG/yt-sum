@@ -38,7 +38,8 @@ channel only.)
 - **Support / homepage:** the GitHub repository (publisher **nalg**).
 - **Privacy policy:** host `PRIVACY.md` (e.g. in the GitHub repo) and paste its
   URL into the "Privacy policy" field, or paste the text directly.
-- **License:** MIT (see `LICENSE`).
+- **License:** AGPL-3.0-only (see `LICENSE`; matches the license selected on
+  the AMO listing).
 
 ## Data collection disclosure (must match the manifest)
 

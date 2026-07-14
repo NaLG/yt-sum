@@ -4,7 +4,7 @@
   "description": "Firefox extension (desktop + Android) for one-click YouTube AI summaries via your own LLM API key.",
   "type": "module",
   "private": true,
-  "license": "MIT",
+  "license": "AGPL-3.0-only",
   "author": "nalg",
   "scripts": {
     "lint": "web-ext lint --source-dir src",

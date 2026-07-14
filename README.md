@@ -65,4 +65,4 @@ Build, test, and release docs live in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)
 
 ## License
 
-MIT, see [LICENSE](LICENSE). Copyright (c) 2026 nalg.
+AGPL-3.0-only, see [LICENSE](LICENSE). Copyright (c) 2026 nalg.
