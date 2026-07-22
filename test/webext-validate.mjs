@@ -1,19 +1,4 @@
 #!/usr/bin/env node
-// Non-WebDriver validation of the extraction pathway — the authoritative test.
-//
-// Why: WebDriver/marionette-automated Firefox is detected by YouTube; its
-// get_transcript/timedtext preconditions fail (every automated variant in
-// test/*.mjs returns 400 failedPrecondition — even YouTube's OWN panel call).
-// `web-ext run` launches a NORMAL Firefox (no marionette webdriver flag) — the
-// extension's real environment.
-//
-// How: a throwaway test extension runs the REAL src/content/extractor.js on the
-// watch page, then relays the result through its background script (not subject
-// to YouTube's page CSP) to a localhost HTTP server this harness runs.
-//
-// Usage: node test/webext-validate.mjs [VIDEO_ID ...]
-// Exit 0 if every video extracted a transcript; 1 otherwise.
-
 import { spawn, execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, copyFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -25,20 +10,12 @@ const FIREFOX = "/Applications/Firefox.app/Contents/MacOS/firefox";
 const FIREFOX_APK = process.env.YAPSUM_FIREFOX_APK || "org.mozilla.firefox";
 const DEBUG = process.env.YAPSUM_DEBUG === "1";
 
-// --target firefox-android runs the SAME test on a USB-connected phone.
-// `adb reverse` tunnels the phone's 127.0.0.1:PORT to this Mac's relay server,
-// so the extension's localhost report reaches us unchanged.
 const rawArgs = process.argv.slice(2);
 const ti = rawArgs.indexOf("--target");
 const ANDROID = ti !== -1 && rawArgs[ti + 1] === "firefox-android";
 const targets = rawArgs.filter((a, i) => a !== "--target" && (ti === -1 || i !== ti + 1));
 const videoIds = targets.length ? targets : ["eIho2S0ZahI", "-FOCpMAww28"];
-// YAPSUM_DESKTOP_UA=1: test ext rewrites the UA header to desktop Firefox for
-// youtube.com — makes www.youtube.com serve the DESKTOP app inside Fenix
-// (m.youtube.com exposes no transcript UI at all; see test/probe-mobile.mjs).
 const DESKTOP_UA = process.env.YAPSUM_DESKTOP_UA === "1";
-
-// ---- localhost report server ------------------------------------------------
 
 let resolveReport = null;
 const server = createServer((req, res) => {
@@ -65,23 +42,20 @@ const server = createServer((req, res) => {
   res.writeHead(404, cors()).end();
 });
 const cors = () => ({ "access-control-allow-origin": "*", "access-control-allow-headers": "content-type" });
-// Bind to all interfaces on Android so `adb reverse` can tunnel to it.
 const PORT = await new Promise((r) => server.listen(0, ANDROID ? "0.0.0.0" : "127.0.0.1", () => r(server.address().port)));
 if (ANDROID) {
   try {
     execFileSync("adb", ["reverse", `tcp:${PORT}`, `tcp:${PORT}`]);
     console.log(`adb reverse tcp:${PORT} → Mac:${PORT} set up`);
   } catch (e) {
-    console.error("adb reverse failed — is a device connected? " + e.message);
+    console.error("adb reverse failed; is a device connected? " + e.message);
     process.exit(1);
   }
 }
 
-// ---- build throwaway test extension ----------------------------------------
-
 const extDir = mkdtempSync(join(tmpdir(), "yapsum-testext-"));
 mkdirSync(join(extDir, "content"), { recursive: true });
-copyFileSync(EXTRACTOR, join(extDir, "content", "extractor.js")); // the REAL extractor
+copyFileSync(EXTRACTOR, join(extDir, "content", "extractor.js"));
 
 writeFileSync(
   join(extDir, "manifest.json"),
@@ -91,8 +65,6 @@ writeFileSync(
     version: "0.0.0",
     browser_specific_settings: { gecko: { id: "yapsum-test@nalg.dev" } },
     permissions: ["webRequest", "webRequestBlocking", "https://www.youtube.com/*", "https://m.youtube.com/*", "http://127.0.0.1/*"],
-    // persistent:true — blocking webRequest listeners are rejected on MV2
-    // event pages (Fenix enforces this; bg.js dies at registration otherwise).
     background: { scripts: ["bg.js"], persistent: true },
     content_scripts: [
       {
@@ -104,8 +76,6 @@ writeFileSync(
   })
 );
 
-// Background relays the content-script result to localhost (content scripts
-// can't reach localhost under YouTube's CSP; background isn't CSP-bound).
 writeFileSync(
   join(extDir, "bg.js"),
   `const report = (msg) =>
@@ -139,7 +109,6 @@ writeFileSync(
    browser.permissions?.getAll?.().then((p) => report({ ping: true, from: "bg", granted: JSON.stringify(p) }));`
 );
 
-// Reporter: wait for the page to settle, run the real extractor, send result up.
 writeFileSync(
   join(extDir, "reporter.js"),
   `(async () => {
@@ -185,8 +154,6 @@ writeFileSync(
    })();`
 );
 
-// ---- run one video ----------------------------------------------------------
-
 function androidDevice() {
   const out = execFileSync("adb", ["devices"], { encoding: "utf8" });
   const ids = out.split("\n").slice(1).map((l) => l.trim().split(/\s+/)).filter(([, s]) => s === "device").map(([id]) => id);
@@ -197,37 +164,31 @@ function androidDevice() {
 function webExtArgs(videoId, profileDir) {
   const common = ["run", "--source-dir", extDir, "--no-reload", "--no-input"];
   if (ANDROID) {
-    // firefox-android does not support --start-url; we navigate via an Android
-    // VIEW intent once web-ext reports the add-on installed (see runOne).
     return [...common, "--target", "firefox-android", "--android-device", androidDevice(), "--firefox-apk", FIREFOX_APK];
   }
   return [
     ...common,
     "--start-url", `https://www.youtube.com/watch?v=${videoId}`,
     "--firefox", FIREFOX, "--firefox-profile", profileDir, "--profile-create-if-missing",
-    // Headed Firefox can't start while the macOS session is locked; headless
-    // renders identically (same UA) and keeps the suite runnable unattended.
     ...(process.env.YAPSUM_HEADLESS === "1" ? ["--arg=-headless"] : []),
   ];
 }
 
 function runOne(videoId) {
-  const TIMEOUT_MS = ANDROID ? 150000 : 75000; // emulator/device: slower boot + page load
+  const TIMEOUT_MS = ANDROID ? 150000 : 75000;
   return new Promise((resolve) => {
     let done = false;
     const profileDir = mkdtempSync(join(tmpdir(), "yapsum-ff-"));
     const child = spawn("web-ext", webExtArgs(videoId, profileDir), {
       stdio: ["ignore", "pipe", DEBUG ? "inherit" : "ignore"],
     });
-    // On Android, wait for the temporary add-on install, then open the video
-    // with a VIEW intent (web-ext can't --start-url there).
     let stdoutBuf = "";
     child.stdout.on("data", (chunk) => {
       if (DEBUG) process.stdout.write(chunk);
       if (!ANDROID || stdoutBuf === null) return;
       stdoutBuf += chunk;
       if (/Installed .* as a temporary add-on/.test(stdoutBuf)) {
-        stdoutBuf = null; // fire once
+        stdoutBuf = null;
         try {
           execFileSync("adb", [
             "shell", "am", "start", "-a", "android.intent.action.VIEW",
@@ -245,6 +206,7 @@ function runOne(videoId) {
       resolveReport = null;
       try { child.kill("SIGTERM"); } catch {}
       setTimeout(() => { try { child.kill("SIGKILL"); } catch {} }, 1500);
+      try { execFileSync("/bin/sh", ["-c", `sleep 2; pkill -f 'firefox.*-profile ${tmpdir()}'; true`]); } catch {}
       resolve(result);
     };
     resolveReport = (report) => finish({ videoId, ...report });
@@ -252,8 +214,6 @@ function runOne(videoId) {
     setTimeout(() => finish({ videoId, ok: false, error: `timeout waiting for report (${TIMEOUT_MS / 1000}s)` }), TIMEOUT_MS);
   });
 }
-
-// ---- main -------------------------------------------------------------------
 
 console.log(`Validating extraction via web-ext (${ANDROID ? "Firefox for Android" : "desktop Firefox"}, port ${PORT}) on ${videoIds.length} video(s)...\n`);
 let allOk = true;

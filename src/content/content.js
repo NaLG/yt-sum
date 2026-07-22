@@ -1,8 +1,3 @@
-// yap-sum content orchestrator, runs on youtube.com/m.youtube.com.
-// Responsibilities: detect watch pages, inject the Summarize button, and on
-// click run extraction -> LLM -> render. Also a manual self-test hook that
-// reports extraction results to the console.
-
 (() => {
   const NS = globalThis.yapSum;
   const LOG = "[yap-sum]";
@@ -18,18 +13,10 @@
     return !!currentVideoId();
   }
 
-  // Shorts are a pathname (/shorts/<id>) on the same origin, not a separate
-  // host, and SPA navigation keeps this script alive across watch<->shorts,
-  // so the exclusion must be a runtime check, not a manifest match pattern.
   function isShortsPage() {
     return location.pathname.startsWith("/shorts/");
   }
 
-  // ---- self-test hook (manual diagnostic) ------------------------------------
-  // Loading a watch URL with #yapsum-selftest makes the content script run the
-  // extractor immediately and print a tagged, machine-readable line to the
-  // page console (visible via `web-ext run` stdout or devtools). No automated
-  // test drives this; it exists for hand-run extraction checks.
   async function runSelfTest() {
     const started = Date.now();
     try {
@@ -56,18 +43,7 @@
     }
   }
 
-  // ---- UI: inject the Summarize button --------------------------------------
-
   function buttonHost() {
-    // Both platforms: immediately LEFT of the like (thumbs-up) control, the
-    // user-chosen placement. Component tags are A/B-variant-dependent, so try
-    // the known like components first, then locate the like button by
-    // aria-label and climb wrappers to the row-level component so the chip
-    // lands beside the like/dislike pill, not inside it.
-    // The player chrome has its OWN (hidden) like button that precedes the
-    // metadata section in document order, so candidates must be visible and
-    // outside the player, and scoped selectors must be tried in PRIORITY
-    // order (a comma-joined querySelector returns document order instead).
     const usable = (el) => {
       if (!el || el.closest("#player, ytd-player, #movie_player, .html5-video-player, yt-player-quick-action-buttons")) return null;
       const r = el.getBoundingClientRect();
@@ -98,7 +74,6 @@
       }
       return { el, place: "before" };
     }
-    // Fallbacks: right of Subscribe, then the owner row, then the old spots.
     const owner = document.querySelector("ytd-watch-metadata #owner");
     if (owner) return { el: owner, place: "append" };
     const mSub =
@@ -119,23 +94,17 @@
     return el ? { el, place: "prepend" } : null;
   }
 
-  // Button style, set on the options page: "text" (default), "sum" (small
-  // Sum pill), "tldw" (small TL;DW pill), or "icon" (compact round chip).
-  // shortsButton (default OFF) opts in to a round logo button on /shorts/;
-  // it ignores buttonStyle because only a circle fits the shorts action rail.
-  // Cached here; storage.onChanged live-swaps the button in place.
   const normStyle = (v) => (v === "icon" || v === "tldw" || v === "sum" ? v : "text");
   let buttonStyle = "text";
   let shortsButton = false;
-  // collapseInPlace (default OFF): the title-bar tap folds the panel up to
-  // just its header where it sits, instead of docking a pill in the bottom
-  // corner. Desktop-only in effect (setCollapsed gates on panelAdjustable).
   let collapseInPlace = false;
-  browser.storage.local.get({ buttonStyle: "text", shortsButton: false, collapseInPlace: false }).then((s) => {
+  let autoSummarize = true;
+  browser.storage.local.get({ buttonStyle: "text", shortsButton: false, collapseInPlace: false, autoSummarize: true }).then((s) => {
     const changed = normStyle(s.buttonStyle) !== buttonStyle || !!s.shortsButton !== shortsButton;
     buttonStyle = normStyle(s.buttonStyle);
     shortsButton = !!s.shortsButton;
     collapseInPlace = !!s.collapseInPlace;
+    autoSummarize = s.autoSummarize !== false;
     if (changed) {
       document.getElementById("yapsum-btn")?.remove();
       ensureButton();
@@ -143,8 +112,13 @@
   }).catch(() => {});
   browser.storage.onChanged.addListener((ch, area) => {
     if (area !== "local") return;
-    if (ch.collapseInPlace) collapseInPlace = !!ch.collapseInPlace.newValue; // next fold picks it up
-    if (!ch.buttonStyle && !ch.shortsButton) return; // only the button needs a rebuild
+    if (ch.collapseInPlace) collapseInPlace = !!ch.collapseInPlace.newValue;
+    if (ch.autoSummarize) autoSummarize = ch.autoSummarize.newValue !== false;
+    if (ch.extraModels || ch.model) {
+      const panel = document.getElementById("yapsum-panel");
+      if (panel) refreshModelPicker(panel);
+    }
+    if (!ch.buttonStyle && !ch.shortsButton) return;
     if (ch.buttonStyle) buttonStyle = normStyle(ch.buttonStyle.newValue);
     if (ch.shortsButton) shortsButton = !!ch.shortsButton.newValue;
     document.getElementById("yapsum-btn")?.remove();
@@ -152,22 +126,11 @@
   });
 
   function ensureButton() {
-    // Shorts are OFF by default: caption coverage there is spotty (no button
-    // is better than one that often fails), and the standard chip doesn't fit
-    // the vertical action rail. The shortsButton setting opts in to a round
-    // logo button styled after the rail's own circles; extraction itself works
-    // on shorts via the playback capture (machine-verified on m.youtube.com,
-    // captions-intercept, see test/probe-shorts-desync.mjs). The remove()
-    // covers SPA navigation carrying a live watch-page button along.
     const onShorts = isShortsPage();
     if (onShorts && !shortsButton) { document.getElementById("yapsum-btn")?.remove(); return; }
     if (!isWatchPage()) return;
     const host = buttonHost();
     if (!host) return;
-    // The preferred host can hydrate AFTER a fallback (on mweb the actions
-    // strip appears before the owner row), so a button parked in the wrong
-    // spot must MIGRATE when a better one shows up; "already connected" is
-    // only good enough when it's connected where we actually want it.
     const existing = document.getElementById("yapsum-btn");
     const placedRight = existing && existing.isConnected &&
       (host.place === "after" ? existing.previousElementSibling === host.el
@@ -181,14 +144,14 @@
     btn.title = "Summarize this video";
     if (onShorts || buttonStyle === "icon") {
       btn.classList.add("yapsum-btn-icon");
-      if (onShorts) btn.classList.add("yapsum-btn-shorts"); // circle sized to the rail
+      if (onShorts) btn.classList.add("yapsum-btn-shorts");
       btn.setAttribute("aria-label", "Summarize");
       const img = document.createElement("img");
       img.src = browser.runtime.getURL("icons/icon-48.png");
       img.alt = "Summarize";
       btn.appendChild(img);
     } else if (buttonStyle === "tldw" || buttonStyle === "sum") {
-      btn.classList.add("yapsum-btn-tldw"); // same small-pill scale for both
+      btn.classList.add("yapsum-btn-tldw");
       btn.setAttribute("aria-label", "Summarize");
       btn.textContent = buttonStyle === "sum" ? "Sum" : "TL;DW";
     } else {
@@ -196,7 +159,7 @@
     }
     btn.addEventListener("click", onSummarizeClick);
     const mobile = location.hostname === "m.youtube.com";
-    if (mobile) btn.classList.add("yapsum-btn-mrow"); // compact, matches mweb row scale
+    if (mobile) btn.classList.add("yapsum-btn-mrow");
     if (host.place === "after") host.el.insertAdjacentElement("afterend", btn);
     else if (host.place === "before") host.el.insertAdjacentElement("beforebegin", btn);
     else host.el[host.place](btn);
@@ -207,9 +170,6 @@
       slimBar: !!document.querySelector("ytm-slim-video-action-bar-renderer"),
     });
     if (mobile && !onShorts && buttonStyle === "text") {
-      // Mobile rows are tight (the merged variant packs avatar + Subscribed +
-      // all the action icons into one row). If the full label overflows the
-      // row we landed in, collapse it to "Sum" rather than wrapping.
       requestAnimationFrame(() => {
         const row = btn.parentElement;
         if (row && row.scrollWidth > row.clientWidth + 1) btn.textContent = "Sum";
@@ -219,16 +179,12 @@
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-  // Per-attempt step log for diagnostics.
   let flow = [];
   function clog(m, x) {
     flow.push({ t: Date.now(), m, ...(x || {}) });
     try { console.log("[yap-sum]", m, x || ""); } catch {}
   }
 
-  // Primary extraction: let YouTube's player fetch the transcript and capture
-  // its JSON response at the network layer (background webRequest filter), which
-  // is robust to UI variants. Falls back to the extractor's DOM/network methods.
   const t0 = () => performance.now();
   function result(videoId, method, segs, started) {
     document.documentElement.dataset.yapsumMethod = method;
@@ -236,8 +192,6 @@
   }
   const captureFor = async (videoId) =>
     (await browser.runtime.sendMessage({ type: "getCaptured", videoId }))?.capture;
-  // A capture is either the classic panel's get_transcript JSON or the player's
-  // own caption-track fetch (timedtext), parse whichever we got.
   const parseCapture = (cap) =>
     !cap ? null
     : cap.kind === "timedtext" ? NS.parseTimedtextBody(cap.text)
@@ -251,8 +205,6 @@
     clog("start", { videoId, url: location.href });
     await browser.runtime.sendMessage({ type: "armCapture" }).catch(() => {});
 
-    // 1. Already captured passively (the player fetched it, user opened the
-    //    transcript or had captions on earlier, or a prior visit). No UI.
     let cap = await captureFor(videoId).catch(() => null);
     clog("passive capture?", { hit: !!cap, kind: cap?.kind });
     if (cap) {
@@ -260,9 +212,6 @@
       if (segs) return result(videoId, methodOf(cap), segs, started);
     }
 
-    // 2. Transcript already rendered on the page (you had it open)? Read it
-    //    directly, variant-proof, and scrolls the (virtualized) panel to get
-    //    every row, restoring scroll position after. No network needed.
     if (NS.scrapeVisibleTranscript()) {
       const segs = await NS.scrapeTranscriptFull();
       if (segs) {
@@ -272,16 +221,8 @@
     }
     clog("scrape visible?", { segments: 0 });
 
-    // 2.5 Mobile: the m.youtube.com player doesn't fetch the transcript/caption
-    //     track until playback begins. onSummarizeClick already kicked playback
-    //     MUTED *synchronously* within the tap gesture (autoplay policy rejects
-    //     play() once we've awaited anything, the bug that made this silently
-    //     do nothing). Here we just poll for the capture that playback triggers;
-    //     the video is paused/restored back in onSummarizeClick's finally.
     if (!cap && location.hostname === "m.youtube.com" && mobilePlayback) {
       clog("mobile: awaiting playback-triggered capture", { playing: !mobilePlayback.v.paused });
-      // ~35s: the in-panel tip asks a paused user to press play at 2.5s, and
-      // field traces show the player's caption fetch can lag playback by a lot.
       for (let i = 0; i < 115 && !cap; i++) {
         await sleep(300);
         cap = await captureFor(videoId).catch(() => null);
@@ -293,12 +234,6 @@
       }
     }
 
-    // 3. Caption-toggle trigger: flick CC on so the player fetches its own
-    //    caption track (an attested request we capture at the network layer),
-    //    then restore the previous CC state. Much subtler than opening the
-    //    panel, and the ONLY working source on the "PAmodern" panel variant,
-    //    where YouTube's own transcript panel spins forever (its get_panel
-    //    response carries no segments).
     const ccBtn = document.querySelector(".ytp-subtitles-button");
     if (ccBtn && ccBtn.offsetParent) {
       const wasOn = ccBtn.getAttribute("aria-pressed") === "true";
@@ -308,7 +243,7 @@
         await sleep(300);
         cap = await captureFor(videoId).catch(() => null);
       }
-      if (!wasOn && ccBtn.getAttribute("aria-pressed") === "true") ccBtn.click(); // restore
+      if (!wasOn && ccBtn.getAttribute("aria-pressed") === "true") ccBtn.click();
       if (cap) {
         const segs = parseCapture(cap);
         clog("cc capture", { kind: cap.kind, segs: segs ? segs.length : 0 });
@@ -318,17 +253,10 @@
       clog("cc button not available");
     }
 
-    // 4. Last resort (desktop only): briefly open the transcript so the player
-    //    fetches it, then capture (or scrape) and close the panel again.
-    //    m.youtube.com has no transcript control at all; poking at it just
-    //    expands the description sheet in the user's face and wastes ~13s.
     if (location.hostname !== "m.youtube.com") {
       let opened = false, openErr = null;
       try { opened = await NS.openTranscriptPanel(); } catch (e) { openErr = e.message; }
       clog("last-resort open", { opened, openErr });
-      // The "PAmodern_transcript_view" variant never renders rows (its get_panel
-      // response has no segments) and only fires the capturable timedtext fetch
-      // ~10s AFTER a close/reopen, so nudge it and wait the fetch out (~40s).
       const modernPanel = () => document.querySelector('[target-id*="PAmodern" i]');
       let retoggles = 0;
       for (let i = 0; i < 130; i++) {
@@ -349,30 +277,24 @@
           await sleep(400);
           try { await NS.openTranscriptPanel(); } catch {}
         }
-        // Non-modern variants resolve (or fail) fast, keep the old 12s budget.
         if (!modernPanel() && i >= 40) break;
       }
       NS.closeTranscriptPanel();
     }
     clog("last-resort open yielded nothing; trying network fallbacks");
 
-    // 5. Network reconstruction fallbacks (usually 400/PoToken-gated, but cheap).
     const r = await NS.extractTranscript(videoId);
     document.documentElement.dataset.yapsumMethod = r.method;
     clog("fallback result", { method: r.method });
     return r;
   }
 
-  // Assemble a diagnostic bundle: content-side step log + background ring buffer
-  // + page facts. Used by the "Copy debug info" button on failures.
   async function buildDebugBundle(errorMsg) {
     let bg = null;
     try { bg = await browser.runtime.sendMessage({ type: "getDebug" }); } catch (e) { bg = { error: String(e) }; }
     const q = (s) => document.querySelectorAll(s).length;
     const btn = NS.findTranscriptButton?.() || null;
 
-    // If scraping missed, dump a sample of elements whose text starts with a
-    // timestamp, that reveals the actual transcript-row markup of this variant.
     const tsSamples = [];
     for (const el of document.querySelectorAll("*")) {
       if (tsSamples.length >= 4) break;
@@ -384,15 +306,23 @@
     let scrapeCount = 0;
     try { scrapeCount = (NS.scrapeVisibleTranscript() || []).length; } catch {}
 
+    let pickerModels = null;
+    try { pickerModels = await browser.runtime.sendMessage({ type: "getModels" }); } catch {}
+
     return {
       yapsum: "debug-v2",
+      version: browser.runtime.getManifest().version,
       url: location.href,
       videoId: NS.currentVideoId(),
       error: errorMsg,
       ua: navigator.userAgent,
+      picker: {
+        mounted: !!document.querySelector("#yapsum-panel .yapsum-model"),
+        activeModelId,
+        defaultModel: pickerModels?.defaultModel ?? null,
+        extraCount: pickerModels?.extra?.length ?? null,
+      },
       pageFacts: {
-        // Summarize-button placement truth, so misplacement reports carry the
-        // DOM facts for whatever A/B variant the reporter's page is running.
         summarizeBtnParent: document.getElementById("yapsum-btn")?.parentElement?.tagName?.toLowerCase() || null,
         summarizeBtnPrevSibling: document.getElementById("yapsum-btn")?.previousElementSibling?.tagName?.toLowerCase() || null,
         subscribeAnchors: ["ytm-subscribe-button-renderer", "yt-subscribe-button-view-model", "ytm-slim-owner-renderer", "ytd-watch-metadata #owner"].filter((s) => document.querySelector(s)),
@@ -411,11 +341,6 @@
     };
   }
 
-  // Mobile playback nudge. MUST be kicked synchronously from the click handler:
-  // the m.youtube.com player only fetches the transcript once playback starts,
-  // and the browser only permits video.play() while the tap gesture is still
-  // active, which it ISN'T after getTranscript's first await. So we start it
-  // here (muted) and restore the video afterward (see onSummarizeClick).
   let mobilePlayback = null;
   function kickMobilePlayback() {
     mobilePlayback = null;
@@ -432,53 +357,139 @@
     mobilePlayback = null;
     if (!m) return;
     try {
-      if (m.wasPaused) { m.v.pause(); m.v.currentTime = m.pos; } // we started it → undo
+      if (m.wasPaused) { m.v.pause(); m.v.currentTime = m.pos; }
       m.v.muted = m.muted;
     } catch {}
   }
 
-  // Per-tab, in-memory cache of finished summaries so returning to a video
-  // re-summons its summary and Q&A instantly, with no re-extraction and no
-  // second LLM bill. Never persisted (dies with the tab); entries expire after
-  // SUMMARY_TTL_MS of disuse, oldest dropped beyond SUMMARY_CACHE_MAX.
   const SUMMARY_TTL_MS = 30 * 60 * 1000;
   const SUMMARY_CACHE_MAX = 10;
-  const summaryCache = new Map(); // videoId -> { title, transcript, summary, qa, ts }
-  function cachedSummary(videoId) {
-    const e = summaryCache.get(videoId);
+  const summaryCache = new Map();
+  function cachedSummary(key) {
+    const e = summaryCache.get(key);
     if (!e) return null;
-    if (Date.now() - e.ts > SUMMARY_TTL_MS) { summaryCache.delete(videoId); return null; }
-    e.ts = Date.now(); // sliding expiry: videos you keep coming back to stay warm
+    if (Date.now() - e.ts > SUMMARY_TTL_MS) { summaryCache.delete(key); return null; }
+    e.ts = Date.now();
     return e;
   }
-  function rememberSummary(videoId, entry) {
-    summaryCache.delete(videoId);
-    summaryCache.set(videoId, { ...entry, ts: Date.now() });
+  function rememberSummary(key, entry) {
+    summaryCache.delete(key);
+    entry.ts = Date.now(); // stored by reference: waiting entries and qa arrays mutate in place
+    summaryCache.set(key, entry);
     for (const k of summaryCache.keys()) {
       if (summaryCache.size <= SUMMARY_CACHE_MAX) break;
       summaryCache.delete(k);
     }
   }
 
+  let activeModelId = null;
+  let pickerVideoId = null;
+
+  function modelSig(models) {
+    if (activeModelId) {
+      const e = models.extra.find((m) => m.id === activeModelId);
+      if (e) return `x:${e.id}:${e.model}`;
+      activeModelId = null;
+    }
+    return `d:${models.defaultModel}`;
+  }
+  function activeModelLabel(models) {
+    const e = activeModelId && models.extra.find((m) => m.id === activeModelId);
+    return e ? e.label : models.defaultLabel || models.defaultModel || "default model";
+  }
+
+  async function refreshModelPicker(panel) {
+    let models = null;
+    try { models = await browser.runtime.sendMessage({ type: "getModels" }); } catch {}
+    if (!models || !Array.isArray(models.extra)) {
+      try {
+        const s = await browser.storage.local.get({ model: "", label: "", extraModels: [] });
+        models = {
+          defaultModel: s.model,
+          defaultLabel: s.label || s.model,
+          extra: (s.extraModels || []).filter((m) => m && m.id && m.model)
+            .map((m) => ({ id: m.id, label: m.label || m.model, model: m.model })),
+        };
+      } catch {
+        models = { defaultModel: "", extra: [] };
+      }
+    }
+    if (currentVideoId() !== pickerVideoId) { pickerVideoId = currentVideoId(); activeModelId = null; }
+    const bar = panel.querySelector(".yapsum-panel-bar");
+    let sel = bar.querySelector(".yapsum-model");
+    if (!models.extra.length) activeModelId = null;
+    if (!sel) {
+      sel = document.createElement("select");
+      sel.className = "yapsum-model";
+      sel.title = "Model for this summary";
+      for (const ev of ["pointerdown", "click"]) sel.addEventListener(ev, (e) => e.stopPropagation());
+      sel.addEventListener("change", () => {
+        if (sel.disabled) return;
+        activeModelId = sel.value || null;
+        onSummarizeClick();
+      });
+      bar.insertBefore(sel, bar.querySelector(".yapsum-panel-close"));
+    }
+    sel.innerHTML = "";
+    const d = document.createElement("option");
+    d.value = "";
+    d.textContent = models.defaultLabel || models.defaultModel;
+    sel.appendChild(d);
+    for (const m of models.extra) {
+      const o = document.createElement("option");
+      o.value = m.id;
+      o.textContent = m.label;
+      sel.appendChild(o);
+    }
+    if (activeModelId && !models.extra.some((m) => m.id === activeModelId)) activeModelId = null;
+    sel.value = activeModelId || "";
+    return models;
+  }
+
+  function setPickerDisabled(panel, disabled) {
+    const sel = panel.querySelector(".yapsum-model");
+    if (sel) sel.disabled = disabled;
+  }
+
   async function onSummarizeClick() {
     const panel = openPanel();
-    setCollapsed(panel, false); // re-summarizing always expands
-    const cached = cachedSummary(currentVideoId());
-    if (cached) {
-      setPanel(panel, ""); // clears any error/streaming state
+    setCollapsed(panel, false);
+    const models = await refreshModelPicker(panel);
+    const sig = modelSig(models);
+    const key = `${currentVideoId()}::${sig}`;
+    const cached = cachedSummary(key);
+    if (cached && cached.summary) {
+      setPanel(panel, "");
       renderMarkdown(cached.summary, panel.querySelector(".yapsum-panel-body"));
-      mountFollowup(panel, cached); // replays the cached Q&A turns
+      mountFollowup(panel, cached);
       return;
     }
+    if (!autoSummarize) {
+      const entry = cached || { title: document.title.replace(" - YouTube", ""), transcript: null, summary: "", qa: [], modelId: activeModelId };
+      if (!cached) rememberSummary(key, entry);
+      renderWaiting(panel, models, sig, entry);
+      return;
+    }
+    await runSummarize(panel, models, sig, cached);
+  }
+
+  function renderWaiting(panel, models, sig, entry) {
+    const body = panel.querySelector(".yapsum-panel-body");
+    body.classList.remove("yapsum-error");
+    body.textContent = "";
+    const run = document.createElement("button");
+    run.type = "button";
+    run.className = "yapsum-run-btn";
+    run.textContent = "Summarize this video";
+    run.addEventListener("click", () => runSummarize(panel, models, sig, entry));
+    body.append(run);
+    mountFollowup(panel, entry);
+  }
+
+  async function runSummarize(panel, models, sig, entry) {
+    setPickerDisabled(panel, true);
     setPanel(panel, "Fetching transcript…");
-    kickMobilePlayback(); // synchronous, MUST stay before the first await below
-    // If we're still waiting after a beat, tell the user the one thing that
-    // reliably unsticks it: play the video. getTranscript keeps polling for
-    // the capture the whole time, so their tap is picked up within ~300ms.
-    // On mobile this shows UNCONDITIONALLY: the muted nudge can flip
-    // video.paused to false while real playback never starts (autoplay
-    // block), so the paused check suppressed the tip exactly when it was
-    // needed. Desktop keeps the paused gate to avoid noise.
+    kickMobilePlayback(); // must stay before the first await: it needs the user-gesture context
     const playHint = setTimeout(() => {
       const v = document.querySelector("video");
       if (location.hostname === "m.youtube.com" || !v || v.paused)
@@ -488,55 +499,50 @@
     try {
       transcript = await getTranscript();
     } catch (e) {
-      // m.youtube.com WATCH pages expose no transcript surface (no panel UI, no
-      // getTranscriptEndpoint, PoToken-gated timedtext, see test/probe-mobile.mjs);
-      // playback capture is the only mobile source, so the hints push toward
-      // playing. On shorts the likely cause is simpler: many have no captions
-      // at all (when they do, playback capture works on both sites, verified
-      // in test/probe-shorts-desync.mjs).
       const hint = isShortsPage()
         ? "\n\nLet the short play for a few seconds, then try again. Note that many Shorts have no captions at all; those can't be summarized."
         : location.hostname === "m.youtube.com"
           ? "\n\nTry playing the video for a few seconds, then tap Summarize again. If that still fails, tap the ⋮ menu, choose \"Desktop site\", and retry."
           : "";
       await showError(panel, `Couldn't get a transcript for this video.${hint}\n\n${e.message}`);
+      setPickerDisabled(panel, false);
       return;
     } finally {
-      clearTimeout(playHint); // never let a late hint clobber the summary
-      restoreMobilePlayback(); // pause + rewind the video we nudged, always
+      clearTimeout(playHint);
+      restoreMobilePlayback();
     }
-    setPanel(panel, `Transcript ready (${transcript.segments.length} lines). Summarizing…`);
+    setPanel(panel, `Transcript ready (${transcript.segments.length} lines). Summarizing with ${activeModelLabel(models)}…`);
     const body = panel.querySelector(".yapsum-panel-body");
     const title = document.title.replace(" - YouTube", "");
     try {
       let acc = "";
       let lastRender = 0;
+      const notices = [];
       const summary = await requestLLM(
-        { type: "summarize", videoId: transcript.videoId, title, transcript: transcript.text },
+        { type: "summarize", videoId: transcript.videoId, title, transcript: transcript.text, modelId: activeModelId },
         {
-          onStage: (text) => { if (!acc) setPanel(panel, text); }, // chunked-progress, pre-stream
+          onStage: (text) => { if (!acc) setPanel(panel, text); },
           onChunk: (chunk) => {
             acc += chunk;
             const now = Date.now();
-            if (now - lastRender > 80) { lastRender = now; renderMarkdown(acc, body); } // live, throttled
+            if (now - lastRender > 80) { lastRender = now; renderMarkdown(acc, body); }
           },
+          onNotice: (text) => notices.push(text),
         }
       );
       const finalText = summary != null ? summary : acc;
-      renderMarkdown(finalText, body); // final clean render
-      const qa = [];
-      mountFollowup(panel, { title, transcript: transcript.text, summary: finalText, qa });
-      // qa is stored BY REFERENCE: follow-up turns pushed later land in the
-      // cache entry automatically.
-      rememberSummary(transcript.videoId, { title, transcript: transcript.text, summary: finalText, qa });
+      renderMarkdown(finalText, body);
+      for (const n of notices) appendNotice(body, n);
+      const qa = entry?.qa || [];
+      const done = { title, transcript: transcript.text, summary: finalText, qa, modelId: activeModelId };
+      mountFollowup(panel, done);
+      rememberSummary(`${transcript.videoId}::${sig}`, done);
     } catch (e) {
       setPanel(panel, `Summary failed:\n\n${e.message}`, true);
     }
+    setPickerDisabled(panel, false);
   }
 
-  // Follow-up Q&A: a text field under the summary. Each question is sent with
-  // the transcript, the summary, and prior Q&A turns; the streamed answer is
-  // appended to the panel body (all rendering injection-safe).
   function mountFollowup(panel, ctx) {
     panel.querySelector(".yapsum-ask")?.remove();
     const bar = document.createElement("div");
@@ -551,13 +557,11 @@
     panel.appendChild(bar);
 
     const body = panel.querySelector(".yapsum-panel-body");
-    // Restoring from the cache replays prior turns; fresh summaries pass an
-    // empty array (shared with the cache entry, see onSummarizeClick).
     const qa = ctx.qa || (ctx.qa = []);
     for (const turn of qa) {
       const qEl = document.createElement("p");
       qEl.className = "yapsum-qa-q";
-      qEl.textContent = turn.q; // textContent only, injection-safe
+      qEl.textContent = turn.q;
       const aEl = document.createElement("div");
       aEl.className = "yapsum-qa-a";
       renderMarkdown(turn.a, aEl);
@@ -569,26 +573,34 @@
       input.disabled = btn.disabled = true;
       const qEl = document.createElement("p");
       qEl.className = "yapsum-qa-q";
-      qEl.textContent = question; // textContent only, injection-safe
+      qEl.textContent = question;
       const aEl = document.createElement("div");
       aEl.className = "yapsum-qa-a";
       aEl.textContent = "…";
       body.append(qEl, aEl);
       aEl.scrollIntoView({ block: "nearest" });
       try {
+        if (!ctx.transcript) {
+          aEl.textContent = "Fetching transcript…";
+          ctx.transcript = (await getTranscript()).text;
+          aEl.textContent = "…";
+        }
         let acc = "", lastRender = 0;
+        const notices = [];
         const answer = await requestLLM(
-          { type: "followup", title: ctx.title, transcript: ctx.transcript, summary: ctx.summary, qa, question },
+          { type: "followup", title: ctx.title, transcript: ctx.transcript, summary: ctx.summary, qa, question, modelId: ctx.modelId || null },
           {
             onChunk: (c) => {
               acc += c;
               const now = Date.now();
               if (now - lastRender > 80) { lastRender = now; renderMarkdown(acc, aEl); }
             },
+            onNotice: (text) => notices.push(text),
           }
         );
         const finalAnswer = answer != null ? answer : acc;
         renderMarkdown(finalAnswer, aEl);
+        for (const n of notices) appendNotice(aEl, n);
         qa.push({ q: question, a: finalAnswer });
         input.value = "";
       } catch (e) {
@@ -599,7 +611,6 @@
       input.focus();
     };
     btn.addEventListener("click", ask);
-    // Keep YouTube's global hotkeys (space, k, f, …) away from the field.
     for (const ev of ["keydown", "keyup", "keypress"]) {
       input.addEventListener(ev, (e) => {
         e.stopPropagation();
@@ -608,15 +619,10 @@
     }
   }
 
-  // ---- safe markdown rendering ----------------------------------------------
-  // The summary is model output injected into YouTube's page, so we NEVER use
-  // innerHTML with it. Every node is built with textContent (and hrefs are
-  // scheme-checked), making injection impossible while still formatting.
-
   function cleanSummary(t) {
     return String(t)
-      .replace(/<\|[^|>]*\|>/g, "")            // <|end_of_turn|>-style special tokens
-      .replace(/<_[^>]*_>/g, "")               // <_ ... _> markers
+      .replace(/<\|[^|>]*\|>/g, "")
+      .replace(/<_[^>]*_>/g, "")
       .replace(/\b(?:end_?of_?turn|ofturn)_?\b/gi, "")
       .replace(/[ \t]+\n/g, "\n")
       .trim();
@@ -636,7 +642,7 @@
           a.href = m[7]; a.textContent = m[6]; a.target = "_blank"; a.rel = "noopener noreferrer";
           parent.appendChild(a);
         } else {
-          parent.appendChild(document.createTextNode(m[0])); // unsafe scheme -> literal
+          parent.appendChild(document.createTextNode(m[0]));
         }
       }
       last = re.lastIndex;
@@ -644,6 +650,7 @@
     if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
   }
 
+  // model output only ever enters the DOM via textContent
   function renderMarkdown(md, container) {
     container.classList.remove("yapsum-error");
     container.textContent = "";
@@ -655,7 +662,7 @@
       let m;
       if ((m = line.match(/^(#{1,6})\s+(.*)$/))) {
         endList();
-        const el = document.createElement("h" + Math.min(Math.max(m[1].length + 1, 3), 6)); // #→h3, ##→h3, ###→h4
+        const el = document.createElement("h" + Math.min(Math.max(m[1].length + 1, 3), 6));
         renderInline(m[2], el);
         container.appendChild(el);
       } else if ((m = line.match(/^\s*[-*+]\s+(.*)$/))) {
@@ -673,11 +680,14 @@
     }
   }
 
-  // Ask the background script to run an LLM call (keeps the API key out of the
-  // page context and centralizes provider logic). Streaming chunks arrive via
-  // a port; "stage" messages report chunked-summarization progress. Returns
-  // the final text.
-  function requestLLM(payload, { onChunk, onStage } = {}) {
+  function appendNotice(container, text) {
+    const p = document.createElement("p");
+    p.className = "yapsum-note";
+    p.textContent = text;
+    container.appendChild(p);
+  }
+
+  function requestLLM(payload, { onChunk, onStage, onNotice } = {}) {
     return new Promise((resolve, reject) => {
       const port = browser.runtime.connect({ name: "summarize" });
       let acc = "";
@@ -687,6 +697,8 @@
           onChunk?.(msg.text);
         } else if (msg.type === "stage") {
           onStage?.(msg.text);
+        } else if (msg.type === "notice") {
+          onNotice?.(msg.text);
         } else if (msg.type === "done") {
           resolve(msg.text ?? acc);
           port.disconnect();
@@ -699,17 +711,9 @@
     });
   }
 
-  // ---- UI: panel move/resize (desktop) ---------------------------------------
-  // Dragging the title bar moves the panel; a press that travels less than
-  // DRAG_SLOP px still counts as the collapse/expand tap. The left, right and
-  // bottom edges plus all four corners resize (the top edge IS the bar).
-  // m.youtube.com keeps the plain tap-to-collapse bottom sheet: no drag, no
-  // grips. Geometry survives panel rebuilds (SPA navigation) for the life of
-  // the tab; width/height stay null until that axis is actually resized, so
-  // an only-moved panel keeps its natural size and viewport height cap.
   const PANEL_MIN_W = 280, PANEL_MIN_H = 140, DRAG_SLOP = 4;
   const panelAdjustable = () => location.hostname !== "m.youtube.com";
-  let panelGeom = null; // { left, top, width|null, height|null }
+  let panelGeom = null;
 
   function applyPanelGeom(panel) {
     const g = panelGeom;
@@ -717,7 +721,6 @@
     const vw = window.innerWidth, vh = window.innerHeight;
     if (g.width != null) g.width = Math.max(PANEL_MIN_W, Math.min(g.width, vw - 16));
     if (g.height != null) g.height = Math.max(PANEL_MIN_H, Math.min(g.height, vh - 16));
-    // Keep enough of the bar on screen to grab the panel back.
     const w = g.width != null ? g.width : Math.min(420, vw - 32);
     g.left = Math.max(80 - w, Math.min(g.left, vw - 80));
     g.top = Math.max(0, Math.min(g.top, vh - 44));
@@ -726,19 +729,12 @@
     panel.style.right = "auto";
     panel.style.bottom = "auto";
     panel.style.width = g.width != null ? g.width + "px" : "";
-    // A folded panel must stay bar-high, so the explicit height only comes
-    // back on expand (setCollapsed(false) re-runs this).
     if (g.height != null && !panel.classList.contains("yapsum-collapsed")) {
       panel.style.height = g.height + "px";
-      panel.style.maxHeight = "none"; // an explicit user height beats the viewport cap
+      panel.style.maxHeight = "none";
     }
   }
 
-  // Collapse is a mode switch, not just a class. Corner mode (default) docks
-  // a compact pill bottom-right: the inline geometry drag/resize left behind
-  // would beat the dock CSS, so it is shed here and re-applied on expand.
-  // In-place mode (collapseInPlace setting) keeps position and width and only
-  // folds the height up to the bar. Mobile keeps the plain class toggle.
   function setCollapsed(panel, collapsed) {
     const inplace = collapsed && collapseInPlace && panelAdjustable();
     panel.classList.toggle("yapsum-collapsed", collapsed);
@@ -753,8 +749,6 @@
     }
   }
 
-  // One pointer-drag session: capture on `el`, call step(dx, dy) per move once
-  // past the slop, then done(moved) on release. Shared by bar drag and grips.
   function dragSession(el, e, step, done) {
     const sx = e.clientX, sy = e.clientY;
     let moved = false;
@@ -769,9 +763,6 @@
       el.removeEventListener("pointercancel", onEnd);
       if (done) done(moved);
     };
-    // Capture keeps the stream on `el` when the cursor outruns the panel.
-    // Synthetic PointerEvents (tests) carry no active pointer id and make
-    // this throw; without capture, moves dispatched at `el` still arrive.
     try { el.setPointerCapture(e.pointerId); } catch {}
     el.addEventListener("pointermove", onMove);
     el.addEventListener("pointerup", onEnd);
@@ -779,9 +770,6 @@
   }
 
   function wirePanelBar(panel, bar, closeBtn) {
-    // Click vs drag: pointer capture keeps the stream on the bar and the
-    // browser still fires the click there after release, so a real drag must
-    // swallow that click or every move would also toggle the collapse.
     let swallowClick = false;
     bar.addEventListener("click", (e) => {
       if (closeBtn.contains(e.target)) return;
@@ -789,12 +777,10 @@
       setCollapsed(panel, !panel.classList.contains("yapsum-collapsed"));
     });
     if (!panelAdjustable()) return;
-    bar.style.touchAction = "none"; // touch-drags move the panel, not the page
+    bar.style.touchAction = "none";
 
     bar.addEventListener("pointerdown", (e) => {
       if (e.button !== 0 || closeBtn.contains(e.target)) return;
-      // The corner pill is tap-to-expand only; an in-place-folded bar can
-      // still be dragged around (applyPanelGeom skips height while folded).
       if (panel.classList.contains("yapsum-collapsed") && !panel.classList.contains("yapsum-inplace")) return;
       const r = panel.getBoundingClientRect();
       dragSession(bar, e, (dx, dy) => {
@@ -805,7 +791,7 @@
         applyPanelGeom(panel);
       }, (moved) => {
         swallowClick = moved;
-        setTimeout(() => { swallowClick = false; }, 0); // the click, if any, fires first
+        setTimeout(() => { swallowClick = false; }, 0);
       });
     });
 
@@ -817,8 +803,6 @@
         e.preventDefault();
         const r = panel.getBoundingClientRect();
         dragSession(grip, e, (dx, dy) => {
-          // Only the dragged axis gets an explicit size; the opposite edge
-          // (left for an e-resize, bottom for an n-resize, ...) stays pinned.
           const g = {
             left: r.left, top: r.top,
             width: panelGeom ? panelGeom.width : null,
@@ -840,8 +824,6 @@
     }
   }
 
-  // ---- UI: result panel -----------------------------------------------------
-
   function openPanel() {
     let panel = document.getElementById("yapsum-panel");
     if (panel) return panel;
@@ -850,10 +832,6 @@
     panel.className = "yapsum-panel";
     const bar = document.createElement("div");
     bar.className = "yapsum-panel-bar";
-    // The bar is the collapse/expand toggle: a tap/click folds the panel to a
-    // compact bar at the bottom (summary + Q&A preserved, so re-opening is
-    // instant, no re-fetch). Only ✕ removes it (then Summarize rebuilds).
-    // On desktop the same bar is also the drag handle, see wirePanelBar.
     const title = document.createElement("span");
     title.className = "yapsum-panel-title";
     title.textContent = "TL;DW";
@@ -869,7 +847,7 @@
     panel.append(bar, body);
     wirePanelBar(panel, bar, close);
     document.body.appendChild(panel);
-    applyPanelGeom(panel); // restore this tab's dragged/resized geometry
+    applyPanelGeom(panel);
     return panel;
   }
 
@@ -879,8 +857,6 @@
     body.classList.toggle("yapsum-error", isError);
   }
 
-  // Error state with a one-click "Copy debug info" button. Also dumps the bundle
-  // to the console so it's grabbable from devtools even without clicking.
   async function showError(panel, message) {
     const bundle = await buildDebugBundle(message);
     try { console.log("[yap-sum] DEBUG BUNDLE", JSON.stringify(bundle)); } catch {}
@@ -894,7 +870,6 @@
       const text = JSON.stringify(bundle, null, 2);
       let ok = false;
       try { await navigator.clipboard.writeText(text); ok = true; } catch {
-        // Fallback for contexts where the async clipboard API is blocked.
         const ta = document.createElement("textarea");
         ta.value = text;
         ta.style.position = "fixed";
@@ -909,15 +884,12 @@
     body.appendChild(btn);
   }
 
-  // ---- lifecycle: survive SPA navigation ------------------------------------
-
   let lastNavHref = location.href;
   let lastNavVid = currentVideoId();
   function onNavigate() {
     lastNavHref = location.href;
     lastNavVid = currentVideoId();
-    document.getElementById("yapsum-panel")?.remove(); // stale video's summary; the cache re-summons it
-    // button host is rebuilt by YouTube on navigation; re-inject when ready
+    document.getElementById("yapsum-panel")?.remove();
     ensureButton();
     if (location.hash.includes("yapsum-selftest")) runSelfTest();
   }
@@ -926,17 +898,10 @@
   window.addEventListener("yt-page-data-updated", ensureButton);
   document.addEventListener("yt-navigate-finish", onNavigate);
 
-  // Popup (browser action) can trigger a summary, the Android entry point.
   browser.runtime.onMessage.addListener((msg) => {
     if (msg?.type === "yapsum-summarize") onSummarizeClick();
   });
 
-  // YouTube's polymer app rebuilds the actions row on navigation and during
-  // hydration, wiping injected nodes. A MutationObserver re-adds the button
-  // whenever it goes missing, more robust than a one-shot poll. It doubles as
-  // the SPA-navigation detector for m.youtube.com, which never fires
-  // yt-navigate-finish: a URL change only counts as navigation when the video
-  // id changed, so chapter/timestamp URL rewrites don't nuke the panel.
   const observer = new MutationObserver(() => {
     if (location.href !== lastNavHref) {
       lastNavHref = location.href;
@@ -944,15 +909,16 @@
     }
     ensureButton();
   });
+  // a previous script generation's UI has dead listeners; updates self-heal open tabs
+  document.getElementById("yapsum-btn")?.remove();
+  document.getElementById("yapsum-panel")?.remove();
   observer.observe(document.documentElement, { childList: true, subtree: true });
   ensureButton();
 
   if (location.hash.includes("yapsum-selftest")) {
-    // Give the page a moment to settle, then self-test.
     setTimeout(runSelfTest, 2500);
   }
 
-  // Marker so tooling can confirm the content script is active (shared DOM).
   document.documentElement.dataset.yapsum = "loaded";
-  console.log(`${LOG} content script loaded on ${location.href}`);
+  console.log(`${LOG} content script v${browser.runtime.getManifest().version} loaded on ${location.href}`);
 })();

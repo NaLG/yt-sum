@@ -1,25 +1,10 @@
-// ============================================================================
-// Transcript capture via network interception.
-//
-// YouTube gates get_transcript/timedtext behind a PoToken only its own player
-// can mint, so we let the player make the request and capture the response
-// at the network layer with webRequest.filterResponseData. This is Firefox-
-// native, immune to page CSP, and independent of how the transcript is rendered
-// (no DOM scraping). Two capturable sources:
-//   - get_transcript: fired when the CLASSIC transcript panel opens.
-//   - /api/timedtext: fired whenever the player turns captions on. On the
-//     "PAmodern_transcript_view" A/B variant the panel uses get_panel (whose
-//     response carries NO segments, YouTube's own panel just spins), so the
-//     caption fetch is the only working source there. The content script can
-//     force it by toggling CC.
-// ============================================================================
-
+// Transcript endpoints are PoToken-gated, so we read YouTube's own player
+// requests at the network layer instead of fetching them ourselves.
 const GT_URLS = ["*://*.youtube.com/youtubei/v1/get_transcript*"];
 const TT_URLS = ["*://*.youtube.com/api/timedtext*"];
-const capturedByVideo = new Map(); // videoId -> { at, kind, json?, text? }
-let lastCapture = null; // most recent, as a fallback when videoId can't be decoded
+const capturedByVideo = new Map();
+let lastCapture = null;
 
-// ---- diagnostics ring buffer ------------------------------------------------
 const START = Date.now();
 const DBG = [];
 function dbg(m, extra) {
@@ -30,10 +15,6 @@ function dbg(m, extra) {
 }
 dbg("background loaded; webRequest available", { has: typeof browser.webRequest?.filterResponseData === "function" });
 
-// The get_transcript request body carries a base64 `params` protobuf whose
-// first field is the 11-char video id. Decode it so captures are keyed by
-// video, this way an already-fetched transcript (opened before Summarize, or
-// preloaded) is matched without needing to re-open the panel.
 function videoIdFromParams(params) {
   try {
     const bin = atob(String(params).replace(/-/g, "+").replace(/_/g, "/"));
@@ -48,8 +29,6 @@ function videoIdFromParams(params) {
   }
 }
 
-// Force identity encoding on captured endpoints so filterResponseData sees
-// plain text (avoids brotli/gzip we can't decode in the filter).
 browser.webRequest.onBeforeSendHeaders.addListener(
   (details) => {
     const requestHeaders = details.requestHeaders.filter(
@@ -62,13 +41,12 @@ browser.webRequest.onBeforeSendHeaders.addListener(
   ["blocking", "requestHeaders"]
 );
 
-// Shared response-body collector for a request being filtered.
 function collectBody(requestId, onText, onErr) {
   const filter = browser.webRequest.filterResponseData(requestId);
   const chunks = [];
   filter.ondata = (event) => {
     chunks.push(new Uint8Array(event.data));
-    filter.write(event.data); // pass through so the player still works
+    filter.write(event.data);
   };
   filter.onstop = () => {
     filter.close();
@@ -86,14 +64,9 @@ function collectBody(requestId, onText, onErr) {
   filter.onerror = () => dbg("filter error", { err: filter.error });
 }
 
-// Capture the player's own caption fetches. The URL carries v=<videoId>, and
-// the response is the FULL track in one shot (json3 or srv XML).
 browser.webRequest.onBeforeRequest.addListener(
   (details) => {
     const videoId = (details.url.match(/[?&]v=([\w-]{11})/) || [])[1] || null;
-    // pot = the player attached its attestation token. An empty body WITH pot
-    // means YouTube gated the player itself (bad); without pot it's just the
-    // probe variant and a pot-carrying retry may follow.
     let q = null;
     try { q = new URL(details.url).searchParams; } catch {}
     dbg("timedtext request seen", { videoId, pot: !!q?.has("pot"), fmt: q?.get("fmt") ?? null, kind: q?.get("kind") ?? null, lang: q?.get("lang") ?? null });
@@ -101,13 +74,10 @@ browser.webRequest.onBeforeRequest.addListener(
       details.requestId,
       (text) => {
         dbg("timedtext response", { bytes: text.length, videoId, first60: text.slice(0, 60) });
-        // Empty 200s are the PoToken-gated variant, the player retries with
-        // attestation; only keep bodies that actually contain caption events.
-        // NEVER set lastCapture here: related-rail inline previews fetch
-        // timedtext for OTHER videos all the time, and the un-keyed fallback
-        // would serve their captions as the current video's transcript.
+        // never lastCapture here: related-video previews fetch OTHER videos' captions
         if (text.length > 50 && videoId) {
           capturedByVideo.set(videoId, { at: Date.now(), kind: "timedtext", text });
+          pruneCaptures();
         }
       },
       (e) => dbg("timedtext capture error", { err: String(e) })
@@ -118,9 +88,6 @@ browser.webRequest.onBeforeRequest.addListener(
   ["blocking"]
 );
 
-// Diagnostic: status + cache facts for the captured endpoints. A 200 that
-// filterResponseData saw as 0 bytes but arrived fromCache/service-worker
-// means the real body exists and is simply invisible to the filter.
 browser.webRequest.onCompleted.addListener(
   (d) =>
     dbg("completed", {
@@ -143,7 +110,6 @@ browser.webRequest.onBeforeRequest.addListener(
         bodyOk = true;
       }
     } catch {
-      /* no/unparseable body, fall back to lastCapture */
     }
     dbg("get_transcript request seen", { videoId, bodyOk, method: details.method });
 
@@ -158,6 +124,7 @@ browser.webRequest.onBeforeRequest.addListener(
           const entry = { at: Date.now(), kind: "get_transcript", json };
           lastCapture = entry;
           if (videoId) capturedByVideo.set(videoId, entry);
+          pruneCaptures();
         }
       },
       (e) => dbg("get_transcript capture error", { err: String(e) })
@@ -169,61 +136,55 @@ browser.webRequest.onBeforeRequest.addListener(
 );
 
 function getCapturedFor(videoId) {
-  // Keyed entries stay valid until pruned (transcripts don't change).
   const byId = videoId && capturedByVideo.get(videoId);
   if (byId) return byId;
-  // Fallback (get_transcript only, see timedtext capture note): a very fresh
-  // capture whose params we couldn't decode is almost certainly the one the
-  // caller just triggered by opening the panel.
   if (lastCapture && Date.now() - lastCapture.at < 20000) return lastCapture;
   return null;
 }
 
-// Keep the map from growing without bound.
+const CAPTURE_MAX = 20;
 function pruneCaptures() {
   const cutoff = Date.now() - 600000;
   for (const [k, v] of capturedByVideo) if (v.at < cutoff) capturedByVideo.delete(k);
+  while (capturedByVideo.size > CAPTURE_MAX)
+    capturedByVideo.delete(capturedByVideo.keys().next().value);
 }
-
-// yap-sum background (event page), runs the LLM call.
-// Keeps the API key out of page context and centralizes provider logic.
-// Two provider shapes:
-//   - "openai": any OpenAI-compatible /v1/chat/completions endpoint
-//     (OpenAI, GLM/Z.ai, Gemini OpenAI-compat, OpenRouter, Groq, Ollama, LM Studio)
-//   - "anthropic": native Claude Messages API (/v1/messages)
-// Streams tokens back to the content script over the connection port.
 
 const DEFAULTS = {
   provider: "openai",
   baseUrl: "https://api.openai.com/v1",
   model: "gpt-4o-mini",
+  label: "",
   apiKey: "",
-  buttonStyle: "text", // "text" | "sum" | "tldw" (small pills) | "icon" (round chip)
+  buttonStyle: "text",
   anthropicVersion: "2023-06-01",
   systemPrompt:
     "You summarize YouTube video transcripts. Produce a tight, skimmable summary: " +
     "a one-sentence TL;DR, then 5-10 bullet points of the key claims, facts, and takeaways " +
     "in the order they appear. Prefer concrete detail over generalities. Omit sponsor reads, " +
     "subscribe requests, and filler. If the video is a tutorial, capture the steps.",
-  maxTokens: 1500,
-  // Guard against pathological transcripts blowing past context windows / cost.
-  // ~4 chars/token, so 320k chars ~= 80k tokens. Trim from the middle if longer.
+  maxTokens: 4000,
   maxTranscriptChars: 320000,
-  // Transcripts longer than chunkChars are summarized map-reduce style:
-  // per-part notes, then one synthesis call. ~100k chars ≈ 25k tokens/call,
-  // safe for small-context models. 0 disables chunking (trim-only behavior).
+  extraModels: [],
   chunkChars: 100000,
   maxChunks: 10,
 };
 
-async function getConfig() {
+async function getConfig(modelId) {
   const stored = await browser.storage.local.get(Object.keys(DEFAULTS));
-  return { ...DEFAULTS, ...stored };
+  const base = { ...DEFAULTS, ...stored };
+  if (!modelId) return base;
+  const entry = (base.extraModels || []).find((m) => m && m.id === modelId);
+  if (!entry) throw new Error("The selected model is no longer in settings. Pick another from the panel's model menu.");
+  const cfg = { ...base };
+  for (const f of ["provider", "baseUrl", "model", "apiKey"]) if (entry[f]) cfg[f] = entry[f];
+  if (cfg.baseUrl !== base.baseUrl && !entry.apiKey && !/localhost|127\.0\.0\.1/.test(cfg.baseUrl))
+    throw new Error(`The "${entry.label || entry.model}" model uses a different endpoint but has no API key of its own. Add one in settings.`);
+  return cfg;
 }
 
 function trimTranscript(text, maxChars) {
   if (text.length <= maxChars) return text;
-  // Keep the head and tail (intro + conclusion usually matter most); mark the cut.
   const half = Math.floor(maxChars / 2);
   return (
     text.slice(0, half) +
@@ -236,8 +197,6 @@ function buildUserPrompt(title, transcript) {
   return `Video title: ${title}\n\nTranscript (timestamps in brackets):\n\n${transcript}`;
 }
 
-// ---- provider request builders ----
-
 function buildRequest(cfg, system, messages) {
   if (cfg.provider === "anthropic") {
     return {
@@ -246,8 +205,6 @@ function buildRequest(cfg, system, messages) {
         "content-type": "application/json",
         "x-api-key": cfg.apiKey,
         "anthropic-version": cfg.anthropicVersion,
-        // Extensions bypass CORS via host permissions, but this header is the
-        // sanctioned BYO-key browser path and harmless to include.
         "anthropic-dangerous-direct-browser-access": "true",
       },
       body: {
@@ -258,9 +215,9 @@ function buildRequest(cfg, system, messages) {
         messages,
       },
       parse: parseAnthropicSSE,
+      finish: finishAnthropicSSE,
     };
   }
-  // OpenAI-compatible
   return {
     url: `${cfg.baseUrl.replace(/\/$/, "")}/chat/completions`,
     headers: {
@@ -274,10 +231,9 @@ function buildRequest(cfg, system, messages) {
       messages: [{ role: "system", content: system }, ...messages],
     },
     parse: parseOpenAISSE,
+    finish: finishOpenAISSE,
   };
 }
-
-// ---- SSE delta parsers: return the text delta from one SSE data line ----
 
 function parseOpenAISSE(json) {
   return json?.choices?.[0]?.delta?.content || "";
@@ -287,20 +243,48 @@ function parseAnthropicSSE(json) {
   return "";
 }
 
-// ---- streaming driver ----
+function finishOpenAISSE(json) {
+  return json?.choices?.[0]?.finish_reason || null;
+}
+function finishAnthropicSSE(json) {
+  return json?.type === "message_delta" ? json.delta?.stop_reason || null : null;
+}
 
-// One streaming LLM call. Returns the full text; onDelta fires per chunk.
-// Throws with a user-presentable message on any failure.
+function finishNotice(finish, cfg) {
+  if (!finish || finish === "stop" || finish === "end_turn" || finish === "stop_sequence") return null;
+  if (finish === "length" || finish === "max_tokens")
+    return `Output was cut off: the model hit the max-tokens limit (${cfg.maxTokens}). Raise "Max output tokens" in settings; reasoning models (e.g. Gemini Flash) also spend this budget on hidden thinking before writing.`;
+  if (finish === "content_filter")
+    return "The provider stopped the output early (content filter; for transcripts this is often a recitation false-positive). Re-running sometimes succeeds.";
+  return `Output ended abnormally (finish reason: ${finish}).`;
+}
+
+const STREAM_STALL_MS = 120000;
+
 async function callLLM(cfg, system, messages, onDelta) {
   const req = buildRequest(cfg, system, messages);
+  const t0 = Date.now();
+  dbg("llm call", {
+    host: (req.url.match(/^https?:\/\/([^/]+)/) || [])[1],
+    model: cfg.model,
+    provider: cfg.provider,
+    promptChars: system.length + messages.reduce((n, m) => n + (m.content?.length || 0), 0),
+  });
+  const ctrl = new AbortController();
+  let watchdog = setTimeout(() => ctrl.abort(), STREAM_STALL_MS);
+  const rearm = () => { clearTimeout(watchdog); watchdog = setTimeout(() => ctrl.abort(), STREAM_STALL_MS); };
   let res;
   try {
-    res = await fetch(req.url, { method: "POST", headers: req.headers, body: JSON.stringify(req.body) });
+    res = await fetch(req.url, { method: "POST", headers: req.headers, body: JSON.stringify(req.body), signal: ctrl.signal });
   } catch (e) {
+    clearTimeout(watchdog);
+    if (ctrl.signal.aborted) throw new Error(`No response from the LLM endpoint after ${STREAM_STALL_MS / 1000}s; gave up.`);
     throw new Error(`Network error reaching the LLM endpoint: ${e.message}`);
   }
   if (!res.ok) {
+    clearTimeout(watchdog);
     const body = await res.text().catch(() => "");
+    dbg("llm http error", { status: res.status, ms: Date.now() - t0, first120: body.slice(0, 120) });
     throw new Error(`LLM endpoint returned ${res.status}. ${body.slice(0, 300)}`);
   }
 
@@ -308,12 +292,19 @@ async function callLLM(cfg, system, messages, onDelta) {
   const decoder = new TextDecoder();
   let buffer = "";
   let full = "";
+  let finish = null;
+  let events = 0;
+  let firstDataMs = null;
   try {
     while (true) {
       const { value, done } = await reader.read();
       if (done) break;
+      rearm();
+      if (firstDataMs === null) {
+        firstDataMs = Date.now() - t0;
+        dbg("llm first data", { ms: firstDataMs });
+      }
       buffer += decoder.decode(value, { stream: true });
-      // SSE frames are separated by blank lines; process complete lines.
       let nl;
       while ((nl = buffer.indexOf("\n")) !== -1) {
         const line = buffer.slice(0, nl).trim();
@@ -323,6 +314,9 @@ async function callLLM(cfg, system, messages, onDelta) {
         if (data === "[DONE]") continue;
         let json;
         try { json = JSON.parse(data); } catch { continue; }
+        if (json?.error) throw new Error(json.error.message || JSON.stringify(json.error).slice(0, 300));
+        events++;
+        finish = req.finish(json) || finish;
         const delta = req.parse(json);
         if (delta) {
           full += delta;
@@ -331,12 +325,17 @@ async function callLLM(cfg, system, messages, onDelta) {
       }
     }
   } catch (e) {
+    dbg("llm stream error", { ms: Date.now() - t0, events, chars: full.length, aborted: ctrl.signal.aborted, err: String(e) });
+    if (ctrl.signal.aborted)
+      throw new Error(`The stream stalled: no data from the LLM endpoint for ${STREAM_STALL_MS / 1000}s. Try again.`);
     throw new Error(`Stream interrupted: ${e.message}`);
+  } finally {
+    clearTimeout(watchdog);
   }
-  return full;
+  dbg("llm done", { ms: Date.now() - t0, firstDataMs, events, chars: full.length, finish });
+  return { text: full, finish };
 }
 
-// Split at line boundaries into <= maxChunks roughly equal parts.
 function splitTranscript(text, targetChars, maxChunks) {
   const nChunks = Math.min(maxChunks, Math.max(2, Math.ceil(text.length / targetChars)));
   const per = Math.ceil(text.length / nChunks);
@@ -360,19 +359,18 @@ const PART_SYSTEM =
   "filler. No commentary about the notes themselves.";
 
 async function streamSummary(port, cfg, title, transcript) {
-  // Long transcript → map-reduce: per-part notes, then one synthesis call that
-  // streams to the panel. Keeps every call within small-model context windows.
   if (cfg.chunkChars > 0 && transcript.length > cfg.chunkChars * 1.2) {
     const capped = trimTranscript(transcript, cfg.chunkChars * cfg.maxChunks);
     const parts = splitTranscript(capped, cfg.chunkChars, cfg.maxChunks);
     const notes = [];
+    let truncatedParts = 0;
     for (let i = 0; i < parts.length; i++) {
       port.postMessage({ type: "stage", text: `Long transcript, summarizing part ${i + 1}/${parts.length}…` });
-      notes.push(
-        await callLLM(cfg, PART_SYSTEM, [
-          { role: "user", content: `Video title: ${title}\n\nTranscript PART ${i + 1} of ${parts.length} (timestamps in brackets):\n\n${parts[i]}` },
-        ])
-      );
+      const part = await callLLM(cfg, PART_SYSTEM, [
+        { role: "user", content: `Video title: ${title}\n\nTranscript PART ${i + 1} of ${parts.length} (timestamps in brackets):\n\n${parts[i]}` },
+      ]);
+      if (part.finish === "length" || part.finish === "max_tokens") truncatedParts++;
+      notes.push(part.text);
     }
     port.postMessage({ type: "stage", text: `Synthesizing summary from ${parts.length} parts…` });
     const synthesis =
@@ -380,18 +378,24 @@ async function streamSummary(port, cfg, title, transcript) {
       `Notes for each part, in order:\n\n` +
       notes.map((n, i) => `--- Part ${i + 1} notes ---\n${n}`).join("\n\n") +
       `\n\nWrite the final summary of the WHOLE video from these notes.`;
-    const full = await callLLM(cfg, cfg.systemPrompt, [{ role: "user", content: synthesis }], (d) =>
+    const res = await callLLM(cfg, cfg.systemPrompt, [{ role: "user", content: synthesis }], (d) =>
       port.postMessage({ type: "chunk", text: d })
     );
-    port.postMessage({ type: "done", text: full });
+    if (truncatedParts)
+      port.postMessage({ type: "notice", text: `${truncatedParts} of ${parts.length} note-taking calls hit the max-tokens limit; some detail may be missing.` });
+    const notice = finishNotice(res.finish, cfg);
+    if (notice) port.postMessage({ type: "notice", text: notice });
+    port.postMessage({ type: "done", text: res.text });
     return;
   }
 
   const userPrompt = buildUserPrompt(title, trimTranscript(transcript, cfg.maxTranscriptChars));
-  const full = await callLLM(cfg, cfg.systemPrompt, [{ role: "user", content: userPrompt }], (d) =>
+  const res = await callLLM(cfg, cfg.systemPrompt, [{ role: "user", content: userPrompt }], (d) =>
     port.postMessage({ type: "chunk", text: d })
   );
-  port.postMessage({ type: "done", text: full });
+  const notice = finishNotice(res.finish, cfg);
+  if (notice) port.postMessage({ type: "notice", text: notice });
+  port.postMessage({ type: "done", text: res.text });
 }
 
 const FOLLOWUP_SYSTEM =
@@ -408,17 +412,23 @@ async function streamFollowup(port, cfg, msg) {
     messages.push({ role: "assistant", content: turn.a });
   }
   messages.push({ role: "user", content: msg.question });
-  const full = await callLLM(cfg, FOLLOWUP_SYSTEM, messages, (d) => port.postMessage({ type: "chunk", text: d }));
-  port.postMessage({ type: "done", text: full });
+  const res = await callLLM(cfg, FOLLOWUP_SYSTEM, messages, (d) => port.postMessage({ type: "chunk", text: d }));
+  const notice = finishNotice(res.finish, cfg);
+  if (notice) port.postMessage({ type: "notice", text: notice });
+  port.postMessage({ type: "done", text: res.text });
 }
-
-// ---- port wiring ----
 
 browser.runtime.onConnect.addListener((port) => {
   if (port.name !== "summarize") return;
   port.onMessage.addListener(async (msg) => {
     if (msg.type !== "summarize" && msg.type !== "followup") return;
-    const cfg = await getConfig();
+    let cfg;
+    try {
+      cfg = await getConfig(msg.modelId || null);
+    } catch (e) {
+      port.postMessage({ type: "error", error: e.message });
+      return;
+    }
     if (!cfg.apiKey) {
       port.postMessage({
         type: "error",
@@ -435,10 +445,16 @@ browser.runtime.onConnect.addListener((port) => {
   });
 });
 
-// Expose defaults to the options page, and serve captured transcripts to the
-// content script.
 browser.runtime.onMessage.addListener((msg, sender) => {
   if (msg?.type === "getDefaults") return Promise.resolve(DEFAULTS);
+  if (msg?.type === "getModels") {
+    return getConfig().then((cfg) => ({
+      defaultModel: cfg.model,
+      defaultLabel: cfg.label || cfg.model,
+      extra: (cfg.extraModels || []).filter((m) => m && m.id && m.model)
+        .map((m) => ({ id: m.id, label: m.label || m.model, model: m.model })),
+    }));
+  }
   if (msg?.type === "armCapture") {
     pruneCaptures();
     return Promise.resolve({ armed: true });
@@ -446,7 +462,6 @@ browser.runtime.onMessage.addListener((msg, sender) => {
   if (msg?.type === "getCaptured") {
     const cap = getCapturedFor(msg.videoId);
     dbg("getCaptured", { videoId: msg.videoId, hit: !!cap, kind: cap?.kind });
-    // json kept for the older content-script shape; capture carries the kind.
     return Promise.resolve({ json: cap?.kind === "get_transcript" ? cap.json : null, capture: cap ? { kind: cap.kind, json: cap.json, text: cap.text } : null });
   }
   if (msg?.type === "getDebug") {

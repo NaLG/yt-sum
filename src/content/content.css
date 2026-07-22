@@ -1,4 +1,4 @@
-/* yap-sum injected UI */
+
 
 .yapsum-btn {
   display: inline-flex;
@@ -6,18 +6,14 @@
   height: 36px;
   padding: 0 16px;
   margin: 0 8px;
-  /* Never let a host row stretch or squish the chip: it is exactly as wide as
-     its content, like YouTube's own Subscribe/Join pills. */
+
   flex: 0 0 auto;
   width: auto;
   white-space: nowrap;
   align-self: center;
   border: none;
   border-radius: 18px;
-  /* Match YouTube's tonal action chips (like/dislike/share) so it blends in
-     both light and dark. These vars are set by YouTube's OWN theme, so the
-     button tracks the site theme (not the OS setting). Fallbacks cover the
-     rare case where the variable isn't defined on a given A/B variant. */
+
   background: var(--yt-spec-badge-chip-background, rgba(0, 0, 0, 0.05));
   color: var(--yt-spec-text-primary, #0f0f0f);
   font-family: "Roboto", "Segoe UI", system-ui, sans-serif;
@@ -29,8 +25,7 @@
 .yapsum-btn:hover {
   background: var(--yt-spec-badge-chip-background-hover, rgba(0, 0, 0, 0.1));
 }
-/* Fallback only for variants that expose no YouTube theme vars AND the OS is in
-   dark mode, keeps the pill legible instead of near-invisible dark-on-dark. */
+
 @media (prefers-color-scheme: dark) {
   .yapsum-btn {
     background: var(--yt-spec-badge-chip-background, rgba(255, 255, 255, 0.1));
@@ -41,7 +36,6 @@
   }
 }
 
-/* Compact text variant: the TL;DW wordmark in a smaller pill. */
 .yapsum-btn-tldw {
   height: 32px;
   padding: 0 12px;
@@ -51,8 +45,6 @@
   letter-spacing: 0.02em;
 }
 
-/* Compact icon variant: a round chip holding the TL;DW mark, sized like
-   YouTube's round icon buttons so it slots into tight action rows. */
 .yapsum-btn-icon {
   width: 36px;
   min-width: 36px;
@@ -67,9 +59,6 @@
   display: block;
 }
 
-/* Mobile owner-row placement (right of Subscribe): match that row's compact
-   scale whatever the chosen style. Must come after the style variants so the
-   size overrides win. */
 .yapsum-btn-mrow {
   height: 32px;
   padding: 0 10px;
@@ -87,9 +76,6 @@
   height: 20px;
 }
 
-/* Shorts rail placement (opt-in via the shortsButton setting): a round logo
-   chip sized like the rail's own circular buttons, sitting above the like
-   control. Placed after the other variants so its sizing wins them all. */
 .yapsum-btn-shorts.yapsum-btn-icon {
   width: 48px;
   min-width: 48px;
@@ -103,7 +89,7 @@
   height: 24px;
   border-radius: 6px;
 }
-/* The mobile rail is tighter than the desktop one. */
+
 .yapsum-btn-mrow.yapsum-btn-shorts.yapsum-btn-icon {
   width: 40px;
   min-width: 40px;
@@ -119,9 +105,7 @@
   position: fixed;
   top: 72px;
   right: 16px;
-  /* border-box so the width/height the resize code writes (measured with
-     getBoundingClientRect, border included) mean the same box they came from;
-     content-box would grow the panel 2px per resize. */
+
   box-sizing: border-box;
   width: min(420px, calc(100vw - 32px));
   max-height: calc(100vh - 100px);
@@ -151,7 +135,7 @@
   font-weight: 600;
   border-bottom: 1px solid rgba(128, 128, 128, 0.2);
   flex-shrink: 0;
-  user-select: none; /* a drag must never start a text selection */
+  user-select: none;
 }
 .yapsum-panel-title {
   flex: 1;
@@ -167,6 +151,29 @@
   opacity: 0.6;
   transition: transform 0.15s ease;
 }
+
+.yapsum-model {
+  max-width: 45%;
+  margin-right: 8px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 400;
+  color: inherit;
+  opacity: 0.7;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 1px 2px;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+.yapsum-model:hover,
+.yapsum-model:focus {
+  opacity: 1;
+  border-color: rgba(128, 128, 128, 0.4);
+}
+.yapsum-model:disabled { opacity: 0.35; cursor: default; }
+.yapsum-model option { color: initial; background: initial; }
 .yapsum-panel-close {
   border: none;
   background: transparent;
@@ -176,14 +183,6 @@
   line-height: 1;
 }
 
-/* Collapsed: fold away the body + Q&A. The panel node stays in the DOM
-   (summary preserved), so tapping the title again restores it instantly with
-   no re-fetch. Two modes, chosen by the collapseInPlace setting (JS adds
-   .yapsum-inplace and sheds/keeps the drag/resize inline geometry to match,
-   see setCollapsed): the default docks a compact pill bottom-right; in-place
-   keeps position and width and needs no rule of its own, height simply folds
-   to the bar once the body is display:none. :where() keeps the dock rule at
-   two-class specificity so the later mobile override still wins. */
 .yapsum-panel.yapsum-collapsed:where(:not(.yapsum-inplace)) {
   top: auto;
   bottom: 16px;
@@ -197,10 +196,6 @@
 .yapsum-panel.yapsum-collapsed .yapsum-ask { display: none; }
 .yapsum-panel.yapsum-collapsed .yapsum-panel-title::after { transform: rotate(-90deg); }
 
-/* Resize grips (desktop only; created by the content script). Invisible
-   strips along the left/right/bottom edges plus all four corners; the top
-   edge has no plain grip because the bar there is the drag/collapse handle.
-   They bleed 4px past the panel so the edge is easy to catch. */
 .yapsum-rs {
   position: absolute;
   z-index: 3;
@@ -218,8 +213,7 @@
 .yapsum-panel-body {
   padding: 14px 16px;
   overflow-y: auto;
-  /* Fill a user-resized (fixed-height) panel so the ask bar stays pinned to
-     the bottom; in the default auto-height panel flex-grow has no effect. */
+
   flex: 1 1 auto;
   min-height: 0;
   white-space: pre-wrap;
@@ -227,7 +221,6 @@
   font-size: 14px;
 }
 
-/* Rendered markdown summary */
 .yapsum-panel-body h3,
 .yapsum-panel-body h4,
 .yapsum-panel-body h5,
@@ -260,7 +253,7 @@
   font-family: ui-monospace, monospace;
   font-size: 13px;
 }
-/* Follow-up Q&A */
+
 .yapsum-ask {
   display: flex;
   gap: 8px;
@@ -307,6 +300,27 @@
   font-size: 13px;
 }
 
+.yapsum-run-btn {
+  display: block;
+  margin: 6px 0;
+  padding: 8px 14px;
+  border: 1px solid rgba(128, 128, 128, 0.45);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.yapsum-run-btn:hover { border-color: currentColor; }
+.yapsum-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  font-style: italic;
+  opacity: 0.65;
+}
+.yapsum-note::before { content: "⚠ "; font-style: normal; }
+
 .yapsum-debug-btn {
   display: inline-block;
   margin-top: 4px;
@@ -322,7 +336,6 @@
 }
 .yapsum-debug-btn:hover { background: #0842a0; }
 
-/* Mobile (m.youtube.com): full-width bottom sheet */
 @media (max-width: 640px) {
   .yapsum-panel {
     top: auto;
@@ -333,8 +346,7 @@
     max-height: 70vh;
     border-radius: 12px 12px 0 0;
   }
-  /* Collapsed on mobile stays docked full-width at the very bottom (a thin
-     title bar), rather than a floating pill. */
+
   .yapsum-panel.yapsum-collapsed {
     bottom: 0;
     left: 0;

@@ -1,15 +1,4 @@
 #!/usr/bin/env node
-// Placement smoke test: asserts the Summarize button sits ON THE SAME ROW as
-// the Subscribe control, TO ITS RIGHT, at content width (not stretched), and
-// that all three button styles (text / tldw / icon) render and live-swap via
-// storage.onChanged. Runs the REAL extension in a real Firefox (web-ext, not
-// WebDriver) with a reporter content script relaying facts over localhost.
-//
-//   node test/smoke-placement.mjs                          # desktop watch page
-//   node test/smoke-placement.mjs --target firefox-android # emulator/device (adb reverse)
-//
-// Exit 0 when every assertion passes.
-
 import { spawn, execFileSync } from "node:child_process";
 import { mkdtempSync, cpSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -29,7 +18,6 @@ const WATCH_URL = ANDROID
   : `https://www.youtube.com/watch?v=${VIDEO}`;
 const DEBUG = process.env.YAPSUM_DEBUG === "1";
 
-// ---- relay server -----------------------------------------------------------
 let resolveReport = null;
 const server = createServer((req, res) => {
   if (req.method === "OPTIONS") return res.writeHead(204, cors()).end();
@@ -53,12 +41,11 @@ const DEVICE = ANDROID
 if (ANDROID && !DEVICE) { console.error("no adb device"); process.exit(1); }
 if (ANDROID) execFileSync("adb", ["reverse", `tcp:${PORT}`, `tcp:${PORT}`]);
 
-// ---- temp extension = real src + reporter -----------------------------------
 const ext = mkdtempSync(join(tmpdir(), "yapsum-place-"));
 cpSync(SRC, ext, { recursive: true });
 const mf = JSON.parse(readFileSync(join(ext, "manifest.json"), "utf8"));
 mf.permissions.push("http://127.0.0.1/*");
-mf.content_scripts[0].js.push("place-reporter.js"); // runs after content.js
+mf.content_scripts[0].js.push("place-reporter.js");
 mf.background.scripts.push("place-bg.js");
 writeFileSync(join(ext, "manifest.json"), JSON.stringify(mf));
 writeFileSync(
@@ -116,26 +103,20 @@ writeFileSync(
    })();`
 );
 
-// ---- launch ------------------------------------------------------------------
+const profileDir = mkdtempSync(join(tmpdir(), "yapsum-ffp-"));
 const webExtArgs = ANDROID
   ? ["run", "--source-dir", ext, "--target", "firefox-android", "--android-device", DEVICE, "--firefox-apk", FIREFOX_APK]
   : ["run", "--source-dir", ext, "--firefox", FIREFOX,
-     "--firefox-profile", mkdtempSync(join(tmpdir(), "yapsum-ffp-")), "--profile-create-if-missing",
+     "--firefox-profile", profileDir, "--profile-create-if-missing",
      "--start-url", WATCH_URL, "--no-reload", "--no-input",
-     // Headed Firefox can't start while the macOS session is locked; headless
-     // renders identically (same UA) and keeps the suite runnable unattended.
      ...(process.env.YAPSUM_HEADLESS === "1" ? ["--arg=-headless"] : [])];
 const child = spawn("web-ext", webExtArgs, { stdio: ["ignore", "pipe", "pipe"] });
 
-// Android has no --start-url, and content scripts only attach to pages loaded
-// AFTER the temp add-on installs: navigate by intent only once web-ext says
-// "Installed", and retry once if the first page load produced no report.
 let gotReport = false;
 if (ANDROID) {
   const fire = () => {
     try { execFileSync("adb", ["shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", WATCH_URL, FIREFOX_APK]); } catch {}
   };
-  // web-ext logs may land on stdout OR stderr depending on version: watch both.
   const onLog = (d) => {
     if (DEBUG) process.stdout.write(d);
     if (/Installed .*temporary add-on/.test(String(d))) {
@@ -155,9 +136,9 @@ const report = await new Promise((resolve) => {
   setTimeout(() => resolve({ error: `timeout (${ANDROID ? 180 : 90}s)` }), ANDROID ? 180000 : 90000);
 });
 try { child.kill("SIGTERM"); } catch {}
+try { execFileSync("/bin/sh", ["-c", `sleep 2; pkill -f 'firefox.*-profile ${tmpdir()}'; true`]); } catch {}
 server.close();
 
-// ---- assertions --------------------------------------------------------------
 let failures = 0;
 const check = (name, ok, detail = "") => {
   console.log(`${ok ? "✓" : "✗"} ${name}${detail ? "  " + detail : ""}`);

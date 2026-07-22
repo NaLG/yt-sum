@@ -1,22 +1,14 @@
 #!/usr/bin/env node
-// Release gate: run the whole deterministic suite sequentially (each test
-// spawns its own Firefox; parallel runs fight over the profile and the
-// window manager) and print one summary table. Exit 0 only if every suite
-// passed. Rendering artifacts (viewport screenshots) land in test/artifacts/
-// for human eyeballing; they are advisory and never gate the run.
-//
-//   node test/run-all.mjs           # full gate (lint + all suites)
-//   node test/run-all.mjs --fast    # skip the slow end-to-end + live-extraction suites
-//
-// Individual suites remain runnable directly (see package.json scripts).
-
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
+import { tmpdir } from "node:os";
 
 const FAST = process.argv.includes("--fast");
 const ROOT = new URL("..", import.meta.url).pathname;
 
 const SUITES = [
   { name: "lint", cmd: "web-ext", args: ["lint", "--source-dir", "src"], timeout: 120 },
+  { name: "style (comment budget, no em-dashes)", cmd: "node", args: ["test/lint-style.mjs"], timeout: 30 },
+  { name: "leak bounds (background collections)", cmd: "node", args: ["test/leak-bounds.mjs"], timeout: 30 },
   { name: "options (geckodriver)", cmd: "node", args: ["test/smoke-options.mjs"], timeout: 180 },
   { name: "placement + styles", cmd: "node", args: ["test/smoke-placement.mjs"], timeout: 180 },
   { name: "shorts exclusion", cmd: "node", args: ["test/smoke-shorts.mjs"], timeout: 180 },
@@ -48,13 +40,23 @@ for (const s of SUITES) {
   results.push(r);
   console.log(r.code === 0 ? `✓ (${r.secs}s)` : `✗ (${r.secs}s, exit ${r.code})`);
   if (r.code !== 0) {
-    // Show the failing suite's tail immediately, that's what you act on.
     console.log(r.out.split("\n").slice(-25).join("\n"));
   }
 }
 
+const leakedBrowsers = execFileSync("ps", ["-axo", "pid=,command="]).toString().split("\n")
+  .filter((line) => /firefox/i.test(line) && line.includes(`-profile ${tmpdir()}`));
+if (leakedBrowsers.length) {
+  console.log(`✗ ${leakedBrowsers.length} leaked test browser(s), now killed:`);
+  for (const line of leakedBrowsers) console.log("  " + line.trim().slice(0, 140));
+  try { execFileSync("/bin/sh", ["-c", `pkill -f 'firefox.*-profile ${tmpdir()}'; true`]); } catch {}
+  results.push({ name: "no leaked browser processes", code: 1, secs: 0 });
+} else {
+  results.push({ name: "no leaked browser processes", code: 0, secs: 0 });
+}
+
 console.log("\n== summary ==");
-for (const r of results) console.log(`${r.code === 0 ? "✓" : "✗"} ${r.name.padEnd(28)} ${r.secs}s`);
+for (const r of results) console.log(`${r.code === 0 ? "✓" : "✗"} ${r.name.padEnd(38)} ${r.secs}s`);
 const failed = results.filter((r) => r.code !== 0);
-console.log(failed.length ? `\n❌ ${failed.length}/${results.length} suite(s) failed` : `\n✅ all ${results.length} suites passed`);
+console.log(failed.length ? `\n❌ ${failed.length}/${results.length} check(s) failed` : `\n✅ all ${results.length} checks passed`);
 process.exit(failed.length ? 1 : 0);

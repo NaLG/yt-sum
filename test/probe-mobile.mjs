@@ -1,16 +1,4 @@
 #!/usr/bin/env node
-// Characterize m.youtube.com's watch page from inside real Firefox for Android
-// (emulator or device): what transcript affordances exist in mobile markup?
-//
-// Reports (relayed content-script -> bg -> adb reverse -> this process):
-//   - anchors: counts of key strings in page text (getTranscriptEndpoint,
-//     captionTracks, engagementPanels, ...)
-//   - transcript-ish controls (aria-label/text match), before and after
-//     expanding the description sheet
-//   - whether clicking "Show transcript" (if found) renders timestamp rows
-//
-// Usage: . scripts/android-env.sh && node test/probe-mobile.mjs [VIDEO_ID]
-
 import { spawn, execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -126,7 +114,7 @@ writeFileSync(
 
     out.anchorsAfterExpand = countAnchors();
     out.controlsAfterExpand = controls();
-    // Sample all control labels after expansion — discovery for mobile markup.
+    // Sample all control labels after expansion; discovery for mobile markup.
     const labels = [];
     for (const el of document.querySelectorAll("button, [role=button]")) {
       const l = ((el.getAttribute("aria-label") || "") + " " + (el.textContent || "").trim()).trim().slice(0, 50);
@@ -149,7 +137,7 @@ writeFileSync(
     // captionTracks from the LIVE page (the player has initialized by now):
     // report the first track's URL params and let bg try the actual fetch.
     // Balanced-bracket array extraction: the lazy-regex approach truncates on
-    // nested }] (mobile name.runs) — same bug exists in extractor.js.
+    // nested }] (mobile name.runs); same bug exists in extractor.js.
     const extractArray = (text, anchor) => {
       const idx = text.indexOf(anchor);
       if (idx === -1) return null;

@@ -1,23 +1,26 @@
 #!/usr/bin/env node
-// Test the options page IN the extension context (geckodriver — no YouTube here,
-// so automation isn't blocked). Verifies the two things the user hit:
-//   1. Preset chips render and clicking one fills the base URL.
-//   2. The model <select> dropdown populates, and picking an option fills the
-//      model text input.
-// A fixed moz-extension UUID (set via the uuids pref) lets us navigate straight
-// to the options page.
-
-import { spawn, execSync as sh } from "node:child_process";
+import { spawn, execSync as sh, execFileSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
+import { createServer } from "node:http";
+
+const mock = createServer((req, res) => {
+  if (req.url === "/v1/models") {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ data: [{ id: "mock/alpha" }, { id: "mock/beta" }] }));
+  } else {
+    res.writeHead(404);
+    res.end();
+  }
+});
+const MOCKPORT = await new Promise((r) => mock.listen(0, "127.0.0.1", () => r(mock.address().port)));
 
 const PORT = 4470;
 const FIREFOX = "/Applications/Firefox.app/Contents/MacOS/firefox";
 const SRC = new URL("../src", import.meta.url).pathname;
 const UUID = "11111111-1111-1111-1111-111111111111";
-// Read the id from the manifest so id changes can't silently break the UUID pin.
 const ADDON_ID = JSON.parse(readFileSync(new URL("../src/manifest.json", import.meta.url), "utf8"))
   .browser_specific_settings.gecko.id;
 
@@ -51,9 +54,6 @@ try {
       "moz:firefoxOptions": {
         binary: FIREFOX,
         args: ["-headless", "--no-remote", "--new-instance"],
-        // Pin the extension's internal UUID so we can navigate to its options
-        // page, and auto-accept optional-permission requests so the runtime
-        // host-grant flow (ensureHostPermission) is testable end to end.
         prefs: {
           "extensions.webextensions.uuids": JSON.stringify({ [ADDON_ID]: UUID }),
           "extensions.webextOptionalPermissionPrompts": false,
@@ -64,41 +64,53 @@ try {
   }));
   await wd("POST", `/session/${sid}/moz/addon/install`, { addon: addonB64, temporary: true });
   await wd("POST", `/session/${sid}/url`, { url: `moz-extension://${UUID}/options/options.html` });
-  // Let load()/renderPresets() run.
   await new Promise((r) => setTimeout(r, 1500));
 
-  const state = await ex(sid, `return {
-    title: document.title,
-    presetCount: document.querySelectorAll('#presetChips .preset-chip').length,
-    hasSelect: !!document.getElementById('modelSelect'),
-    modelOptions: document.getElementById('modelSelect') ? document.getElementById('modelSelect').options.length : 0,
-  };`);
+  const state = await ex(sid, `
+    const m = document.getElementById('model');
+    m.focus();
+    m.value = ''; // an empty field shows the whole catalog
+    m.dispatchEvent(new Event('input', { bubbles: true }));
+    return {
+      title: document.title,
+      presetCount: document.querySelectorAll('#presetChips .preset-chip').length,
+      comboOptions: m.parentNode.querySelectorAll('.combo-opt').length,
+    };`);
   check("options page loaded", /return youtube summary/i.test(state.title || ""), `title="${state.title}"`);
   check("preset chips render", state.presetCount >= 5, `count=${state.presetCount}`);
-  check("model dropdown is a <select>", state.hasSelect);
-  check("model dropdown pre-seeded", state.modelOptions >= 3, `options=${state.modelOptions}`);
+  check("model combobox opens pre-seeded on focus", state.comboOptions >= 3, `options=${state.comboOptions}`);
 
-  // Click the OpenRouter preset → base URL fills.
   const afterPreset = await ex(sid, `
     const chip = [...document.querySelectorAll('#presetChips .preset-chip')].find(b => /openrouter/i.test(b.textContent));
     if (chip) chip.click();
-    return { baseUrl: document.getElementById('baseUrl').value, model: document.getElementById('model').value };
+    return { baseUrl: document.getElementById('baseUrl').value, model: document.getElementById('model').value, label: document.getElementById('label').value };
   `);
   check("clicking OpenRouter preset fills base URL", afterPreset.baseUrl === "https://openrouter.ai/api/v1", `baseUrl="${afterPreset.baseUrl}"`);
   check("preset also fills a default model", !!afterPreset.model, `model="${afterPreset.model}"`);
+  check("default-model label auto-fills from model id", afterPreset.label === "gemini-3.5-flash", `label="${afterPreset.label}"`);
 
-  // Pick a model from the dropdown → text input updates.
-  const afterPick = await ex(sid, `
-    const sel = document.getElementById('modelSelect');
-    // choose the first real model option (index 1; 0 is placeholder)
-    const opt = [...sel.options].find(o => o.value && o.value !== '__custom__');
-    sel.value = opt.value;
-    sel.dispatchEvent(new Event('change'));
-    return { picked: opt.value, model: document.getElementById('model').value };
+  const afterFilter = await ex(sid, `
+    const m = document.getElementById('model');
+    m.focus();
+    m.value = 'glm';
+    m.dispatchEvent(new Event('input', { bubbles: true }));
+    return [...m.parentNode.querySelectorAll('.combo-opt')].map(o => o.textContent);
   `);
-  check("picking from dropdown fills model field", afterPick.model === afterPick.picked, `picked="${afterPick.picked}" model="${afterPick.model}"`);
+  check(
+    "typing filters the model list",
+    afterFilter.length >= 1 && afterFilter.every((o) => /glm/i.test(o)),
+    JSON.stringify(afterFilter)
+  );
+  const afterPick = await ex(sid, `
+    const m = document.getElementById('model');
+    const opt = m.parentNode.querySelector('.combo-opt');
+    const picked = opt.textContent;
+    opt.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    return { picked, model: m.value, listHidden: m.parentNode.querySelector('.combo-list').hidden };
+  `);
+  check("picking a suggestion fills model field", afterPick.model === afterPick.picked, `picked="${afterPick.picked}" model="${afterPick.model}"`);
+  check("picking closes the list", afterPick.listHidden === true);
 
-  // API key field is readable by default; the toggle masks/reveals it.
   const keyState = await ex(sid, `
     const el = document.getElementById('apiKey');
     const before = el.type;
@@ -107,16 +119,78 @@ try {
     document.getElementById('toggleKey').click();
     return { before, after, restored: el.type, btn: document.getElementById('toggleKey').textContent };
   `);
+  const autoSum = await ex(sid, `return document.getElementById('autoSummarize').checked;`);
+  check("auto-summarize checked by default", autoSum === true, `checked=${autoSum}`);
   check("API key visible by default", keyState.before === "text", `type="${keyState.before}"`);
   check("toggle masks the key", keyState.after === "password");
   check("toggle restores visibility", keyState.restored === "text");
 
-  // Provider hosts are OPTIONAL permissions: Save must runtime-request the
-  // one host for the configured endpoint (auto-granted via the pref above)
-  // and end in "Saved.", proving the least-privilege grant flow works.
-  // permissions.request demands a USER INPUT handler, so the click must be a
-  // trusted WebDriver element click, not a synthetic executeScript .click().
   await ex(sid, `document.getElementById('apiKey').value = 'sk-smoke-test';`);
+  const rowState = await ex(sid, `
+    document.getElementById('addModel').click();
+    const row = document.querySelector('#extraModelsList .xm-row');
+    const m = row.querySelector('.xm-model');
+    m.focus();
+    m.value = 'glm';
+    m.dispatchEvent(new Event('input', { bubbles: true }));
+    const filtered = [...row.querySelectorAll('.combo-opt')].map(o => o.textContent);
+    m.value = 'moonshotai/kimi-k3';
+    m.dispatchEvent(new Event('input', { bubbles: true }));
+    return {
+      label: row.querySelector('.xm-label').value,
+      key: row.querySelector('.xm-apiKey').value,
+      baseUrl: row.querySelector('.xm-baseUrl').value,
+      filtered,
+    };
+  `);
+  check("row label auto-fills from model id", rowState.label === "kimi-k3", `label="${rowState.label}"`);
+  check("row key prefilled from main key", rowState.key === "sk-smoke-test", `key="${rowState.key}"`);
+  check("row endpoint prefilled from main", rowState.baseUrl === "https://openrouter.ai/api/v1", `baseUrl="${rowState.baseUrl}"`);
+  check(
+    "row combobox filters over the shared catalog",
+    rowState.filtered.length >= 1 && rowState.filtered.every((o) => /glm/i.test(o)),
+    JSON.stringify(rowState.filtered)
+  );
+
+  await ex(sid, `
+    const row = document.querySelector('#extraModelsList .xm-row');
+    row.querySelector('.xm-baseUrl').value = 'http://127.0.0.1:${MOCKPORT}/v1';
+    row.querySelector('.xm-apiKey').value = 'k2';
+  `);
+  const loadEl = await wd("POST", `/session/${sid}/element`, { using: "css selector", value: "#extraModelsList .xm-row .xm-load" });
+  await wd("POST", `/session/${sid}/element/${Object.values(loadEl)[0]}/click`, {});
+  let rowList = [];
+  for (let i = 0; i < 20; i++) {
+    await new Promise((r) => setTimeout(r, 400));
+    rowList = await ex(sid, `
+      const row = document.querySelector('#extraModelsList .xm-row');
+      const m = row.querySelector('.xm-model');
+      m.focus();
+      m.value = '';
+      m.dispatchEvent(new Event('input', { bubbles: true }));
+      return [...row.querySelectorAll('.combo-opt')].map(o => o.textContent);
+    `);
+    if (rowList.includes("mock/alpha")) break;
+  }
+  check("row loader pulls the row endpoint's catalog", rowList.includes("mock/alpha") && rowList.includes("mock/beta"), JSON.stringify(rowList));
+  const mainList = await ex(sid, `
+    const m = document.getElementById('model');
+    m.focus();
+    m.value = '';
+    m.dispatchEvent(new Event('input', { bubbles: true }));
+    const all = [...m.parentNode.querySelectorAll('.combo-opt')].map(o => o.textContent);
+    m.value = 'google/gemini-3.5-flash'; // restore for the save test below
+    m.dispatchEvent(new Event('input', { bubbles: true }));
+    // Restore the row's model too: the save test below must persist a REAL,
+    // complete entry (the shape smoke-full replays against the panel).
+    const rm = document.querySelector('#extraModelsList .xm-row .xm-model');
+    rm.value = 'moonshotai/kimi-k3';
+    rm.dispatchEvent(new Event('input', { bubbles: true }));
+    return all;
+  `);
+  check("row catalog stays row-local", mainList.length >= 3 && !mainList.includes("mock/alpha"), `main sees ${mainList.length} options`);
+
+  // permissions.request needs a trusted gesture: WebDriver element click, not .click()
   const found = await wd("POST", `/session/${sid}/element`, { using: "css selector", value: "#save" });
   const eid = Object.values(found)[0];
   await wd("POST", `/session/${sid}/element/${eid}/click`, {});
@@ -129,12 +203,40 @@ try {
   check("save runtime-grants the provider host", /^saved\.?$/i.test(saveStatus.trim()), `status="${saveStatus}"`);
   const granted = await ex(sid, `return browser.permissions.contains({ origins: ["https://openrouter.ai/*"] });`).catch(() => null);
   check("openrouter.ai origin granted after save", granted === true, `contains=${granted}`);
+
+  const stored = await ex(sid, `return browser.storage.local.get("extraModels");`).catch(() => null);
+  const xm = stored?.extraModels?.[0];
+  check(
+    "options-UI save persists the full extraModels entry",
+    !!xm && typeof xm.id === "string" && xm.id.length >= 2 && xm.label === "kimi-k3" && xm.provider === "openai" &&
+      xm.baseUrl === `http://127.0.0.1:${MOCKPORT}/v1` && xm.model === "moonshotai/kimi-k3" && xm.apiKey === "k2",
+    JSON.stringify(stored?.extraModels)
+  );
+
+  await ex(sid, `
+    document.getElementById('addModel').click();
+    const rows = document.querySelectorAll('#extraModelsList .xm-row');
+    const row = rows[rows.length - 1];
+    const l = row.querySelector('.xm-label');
+    l.value = 'typed-into-wrong-field';
+    l.dispatchEvent(new Event('input', { bubbles: true }));
+  `);
+  await wd("POST", `/session/${sid}/element/${eid}/click`, {});
+  let badStatus = "";
+  for (let i = 0; i < 10; i++) {
+    await new Promise((r) => setTimeout(r, 400));
+    badStatus = (await ex(sid, `return document.getElementById('status').textContent;`)) || "";
+    if (badStatus && !/^saved\.?$/i.test(badStatus.trim())) break;
+  }
+  check("label-without-model row refuses to save", /no model id/i.test(badStatus), `status="${badStatus}"`);
 } catch (e) {
   console.log("SMOKE ERROR:", e.message);
   failures++;
 } finally {
   if (sid) await wd("DELETE", `/session/${sid}`).catch(() => {});
   driver.kill();
+  mock.close();
+  try { execFileSync("/bin/sh", ["-c", `sleep 2; pkill -f 'firefox.*-profile ${tmpdir()}'; true`]); } catch {}
 }
 console.log(failures ? `\n❌ ${failures} check(s) failed` : "\n✅ options page OK");
 process.exit(failures ? 1 : 0);

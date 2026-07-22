@@ -1,27 +1,6 @@
-// yap-sum transcript extractor, runs in the YouTube page context.
-// No WebExtension APIs here: this file is loaded by the content script AND
-// injected verbatim by the test harnesses, so shipped code == tested code.
-//
-// Extraction strategy, in order (full story in docs/EXTRACTION.md):
-//   1. DOM panel scrape, trigger YouTube's own "Show transcript" panel and read
-//      the rendered segments. YouTube's app fetches the full transcript in one
-//      internal call (carrying the PoToken/attestation it generates itself) and
-//      renders every segment into the DOM. Proven to work even logged-out.
-//   2. get_transcript reconstruction, fast, no UI, but its precondition often
-//      fails outside a warmed/logged-in session; used as an opportunistic fast path.
-//   3. timedtext (captionTracks + fmt=json3), legacy; increasingly PoToken-gated
-//      (empty 200). Last resort.
-//
-// Empirical note (test/*.mjs): standalone reconstruction of get_transcript
-// returns 400 "failedPrecondition" even from the real page, YouTube gates it
-// on an attestation only its own app produces. So we let the app do the fetch
-// and scrape the result, rather than forging the request ourselves.
-
 (() => {
   const NS = (globalThis.yapSum = globalThis.yapSum || {});
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-  // ---- small parsing helpers ----
 
   function rx(text, re, group = 1) {
     const m = text.match(re);
@@ -74,12 +53,6 @@
     return parts.reduce((acc, p) => acc * 60 + p, 0) * 1000;
   }
 
-  // ---- method 1: DOM transcript-panel scrape (primary) ----------------------
-
-  // The transcript control varies by A/B variant and viewport: <button>,
-  // yt-button-shape, [role=button], sometimes an <a>. aria-label match first
-  // (most precise), then short visible text ("Transcript" / "Show transcript"), 
-  // the length guard keeps comment links etc. from matching.
   const BUTTONISH = "button, tp-yt-paper-button, yt-button-shape, ytd-button-renderer, [role=button], a";
   function findTranscriptButton() {
     let b = document.querySelector('button[aria-label*="transcript" i], [role=button][aria-label*="transcript" i]');
@@ -98,17 +71,6 @@
 
   const TS_RE = /^\d{1,2}:\d{2}(?::\d{2})?$/;
 
-  // Generic, variant-proof transcript scrape. YouTube ships several different
-  // transcript-panel markups across A/B experiments, so instead of matching
-  // specific tag/class names we key on STRUCTURE: a transcript row is any
-  // element that directly contains a timestamp-only child, followed by text.
-  // We then keep the largest group of such rows sharing one parent (the
-  // transcript list). Reads whatever is already rendered, no panel toggling.
-  // Find the transcript engagement panel specifically, so we never mistake
-  // related-video durations or chapter markers for transcript rows.
-  // Several transcript-ish containers can coexist (e.g. an empty
-  // "PAmodern_transcript_view" stub next to the populated panel), so return
-  // ALL candidates, detectTranscript picks the one that actually has rows.
   function transcriptPanelCandidates() {
     const seen = new Set();
     const out = [];
@@ -127,11 +89,6 @@
     return out;
   }
 
-  // Read whatever transcript rows are currently rendered inside the transcript
-  // panel. Variant-proof: keys on structure (timestamp + text rows) rather than
-  // tag/class names. Returns { segs, list, panel } or null. Returns null if the
-  // transcript panel isn't present/open, we do NOT scrape stray timestamps
-  // elsewhere on the page.
   function detectTranscript() {
     let best = null;
     for (const panel of transcriptPanelCandidates()) {
@@ -148,9 +105,6 @@
     }
     if (tsEls.length < 3) return null;
 
-    // The list is the container with the most timestamp-bearing ROW children.
-    // Rows sit in their own wrappers, so grouping by immediate parent fails, 
-    // walk up and credit each ancestor for the distinct child leading to a ts.
     const childRows = new Map();
     for (const ts of tsEls) {
       let node = ts, depth = 0;
@@ -185,9 +139,8 @@
     return d ? d.segs : [];
   }
 
-  NS.findTranscriptButton = findTranscriptButton; // used by the debug bundle
+  NS.findTranscriptButton = findTranscriptButton;
 
-  // Debug helper: report whether/how the transcript panel was located.
   NS.transcriptPanelInfo = function transcriptPanelInfo() {
     const candidates = transcriptPanelCandidates();
     if (!candidates.length) return null;
@@ -212,17 +165,11 @@
     return null;
   }
 
-  // Sync: read only the currently-rendered rows (fast; may be partial if the
-  // panel is virtualized).
   NS.scrapeVisibleTranscript = function scrapeVisibleTranscript() {
     const segs = scrapeSegments();
     return segs.length ? segs : null;
   };
 
-  // Async: get the FULL transcript from a (possibly virtualized) panel by
-  // scrolling through it and accumulating unique rows, then restoring the
-  // scroll position. Used as the fallback when the network intercept isn't
-  // available.
   NS.scrapeTranscriptFull = async function scrapeTranscriptFull() {
     const d = detectTranscript();
     if (!d) return null;
@@ -244,7 +191,7 @@
         scroller.scrollTop += Math.max(scroller.clientHeight * 0.8, 150);
         await sleep(60);
       }
-      scroller.scrollTop = saved; // restore to minimize visual disruption
+      scroller.scrollTop = saved;
     }
 
     const out = [...collected.entries()].map(([startMs, text]) => ({ startMs, text })).sort((a, b) => a.startMs - b.startMs);
@@ -255,16 +202,10 @@
     return scrapeSegments();
   }
 
-  // Trigger YouTube's own transcript panel (which makes the player fire its
-  // attested get_transcript request). Used by the content-script intercept path
-  // and by the DOM-scrape fallback. Returns true if a trigger was clicked or a
-  // panel is already open.
   NS.openTranscriptPanel = async function openTranscriptPanel() {
-    if (readPanelSegments().length) return true; // already open
+    if (readPanelSegments().length) return true;
     let btn = findTranscriptButton();
     if (!btn) {
-      // The control usually lives in the EXPANDED description. Known #expand ids
-      // first, then any button-ish "…more"/"Show more" (never "More options").
       const expand =
         document.querySelector("#description #expand, #expand, ytd-text-inline-expander #expand, tp-yt-paper-button#expand") ||
         Array.from(document.querySelectorAll("button, [role=button]")).find((el) => {
@@ -272,7 +213,6 @@
           return /show more|…more|\.\.\.more|^more$|expand/i.test(label) && !/options|less/i.test(label);
         });
       if (expand) expand.click();
-      // The button can render a beat after expansion (SPA), so poll for it.
       for (let i = 0; i < 10 && !btn; i++) {
         await sleep(400);
         btn = findTranscriptButton();
@@ -284,30 +224,24 @@
     return true;
   };
 
-  // Close the transcript panel we opened (used to clean up after a last-resort
-  // open, so we don't leave visual noise the user didn't ask for).
   NS.closeTranscriptPanel = function closeTranscriptPanel() {
     const btn = findTranscriptButton();
-    if (btn) btn.click(); // toggles the panel closed
+    if (btn) btn.click();
   };
 
   async function viaPanelScrape() {
     let segs = readPanelSegments();
     if (!segs.length) {
       await NS.openTranscriptPanel();
-      // Wait for the panel to populate. YouTube renders the full transcript at
-      // once (not virtualized), so once segments appear they're complete.
       for (let i = 0; i < 40 && !segs.length; i++) {
         await sleep(300);
         segs = readPanelSegments();
       }
-      if (segs.length) { await sleep(300); segs = readPanelSegments(); } // settle tail
+      if (segs.length) { await sleep(300); segs = readPanelSegments(); }
     }
     if (!segs.length) throw new Error("transcript panel did not populate");
     return { method: "panel", segments: segs };
   }
-
-  // ---- method 2: InnerTube get_transcript (fast path, often gated) ----------
 
   function bootstrapFromText(text) {
     return {
@@ -315,8 +249,6 @@
       clientVersion: rx(text, /"INNERTUBE_CLIENT_VERSION":"([^"]+)"/),
       context: extractJsonObject(text, '"INNERTUBE_CONTEXT":'),
       params: jsonUnescape(rx(text, /"getTranscriptEndpoint":\s*\{"params":"([^"]+)"/)),
-      // Balanced parse, a lazy /\[.+?\}\]/ regex truncates when a track's
-      // name uses runs (nested "}]"), as the mobile player response does.
       captionTracks: extractJsonArray(text, '"captionTracks":'),
     };
   }
@@ -330,10 +262,8 @@
     try {
       const res = await fetch(`${location.origin}/watch?v=${videoId}`, { credentials: "include" });
       fetched = bootstrapFromText(await res.text());
-    } catch { /* offline/refused, the DOM bootstrap is all we have */ }
+    } catch { }
     if (!fetched) return domBoot;
-    // Per-field merge: the refetched page (m.youtube.com especially) can be a
-    // JS shell MISSING fields the live DOM already has, never erase those.
     return {
       apiKey: fetched.apiKey || domBoot.apiKey,
       clientVersion: fetched.clientVersion || domBoot.clientVersion,
@@ -363,10 +293,6 @@
     return { method: "get_transcript", segments };
   }
 
-  // ---- method 3: legacy timedtext -------------------------------------------
-
-  // Parse a caption-track body (the player fetches these when CC turns on).
-  // json3 ({events:[{tStartMs,segs:[{utf8}]}]}) or srv XML (<text start dur>).
   NS.parseTimedtextBody = function parseTimedtextBody(text) {
     if (!text || !text.trim()) return null;
     try {
@@ -376,7 +302,7 @@
         .map((e) => ({ startMs: Number(e.tStartMs || 0), text: e.segs.map((s) => s.utf8 || "").join("").replace(/\n/g, " ") }))
         .filter((s) => s.text.trim());
       return segments.length ? segments : null;
-    } catch { /* not JSON, try XML */ }
+    } catch { }
     try {
       const doc = new DOMParser().parseFromString(text, "text/xml");
       const segments = Array.from(doc.querySelectorAll("text"))
@@ -394,7 +320,7 @@
     if (!tracks?.length) throw new Error("no captionTracks");
     const track = tracks.find((t) => (t.languageCode || "").startsWith("en")) || tracks[0];
     const raw = jsonUnescape(track.baseUrl);
-    const url = /^https?:/i.test(raw) ? raw : location.origin + raw; // mobile baseUrl is relative
+    const url = /^https?:/i.test(raw) ? raw : location.origin + raw;
     const res = await fetch(url + (url.includes("?") ? "&" : "?") + "fmt=json3", { credentials: "include" });
     const text = await res.text();
     if (!res.ok) throw new Error(`timedtext HTTP ${res.status}`);
@@ -404,8 +330,6 @@
     return { method: "timedtext", segments };
   }
 
-  // ---- public API -----------------------------------------------------------
-
   NS.currentVideoId = function () {
     return (
       new URLSearchParams(location.search).get("v") ||
@@ -414,21 +338,16 @@
     );
   };
 
-  // Parse a captured get_transcript JSON response into segments (the network
-  // intercept path). Returns null if it has no transcript.
   NS.parseGetTranscriptJson = function (json) {
     const segments = collectSegments(json);
     return segments.length ? segments : null;
   };
 
-  // Format segments into the standard result shape (shared by all methods).
   NS.buildResult = function (videoId, method, segments, timings, errors) {
     const text = segments.map((s) => `[${msToStamp(s.startMs)}] ${s.text}`).join("\n");
     return { videoId, method, segments, text, chars: text.length, timings: timings || {}, errors: errors || [] };
   };
 
-  // opts.order lets tests force a single method. Default order leads with the
-  // proven-reliable panel scrape.
   NS.extractTranscript = async function extractTranscript(videoId, opts = {}) {
     videoId = videoId || NS.currentVideoId();
     if (!videoId) throw new Error("could not determine video id");

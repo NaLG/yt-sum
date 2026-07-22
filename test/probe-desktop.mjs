@@ -1,10 +1,4 @@
 #!/usr/bin/env node
-// Characterize the "PAmodern_transcript_view" A/B variant on desktop: after
-// clicking "Show transcript", the modern panel expands but stays empty on some
-// videos. Timeline-probe what makes it populate (time? playback? scroll?).
-//
-// Usage: node test/probe-desktop.mjs [VIDEO_ID]
-
 import { spawn } from "node:child_process";
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";

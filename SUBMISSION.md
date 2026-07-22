@@ -122,6 +122,85 @@ transmitted to the developer; there is no backend.
 > title bar and resized from its edges and corners. The two new settings are
 > on the options page.
 
+## 0.5.3 version submission (2026-07-20)
+
+**Release notes (paste into the version's "Release notes" field):**
+
+> Model picker and streaming reliability fixes. No new install-time
+> permissions.
+>
+> - New: extra models. In settings, add more models. They reuse your main
+>   endpoint and key by default, or each can bring its own. The summary
+>   panel then shows a subtle model picker so you can re-run the same video
+>   through a deeper, cheaper, or just different model. Follow-up questions
+>   go to whichever model wrote the summary they are about, and the panel
+>   names the model it is summarizing with.
+> - The model fields now filter as you type, and each extra model can load
+>   the live model catalog from its own endpoint. The panel's model chip is
+>   always shown, so you can see which model will run, and every model
+>   (including the default) can carry a short label of your choosing.
+> - New setting "Auto-summarize" (on by default, matching old behavior).
+>   Turned off, the Summarize button opens the panel in a waiting state: pick
+>   a model or ask a question first, and nothing is billed until you click
+>   "Summarize this video".
+> - Fixed: granting access to a local endpoint with a port (e.g. Ollama on
+>   localhost:11434) could fail; ports are now handled correctly.
+> - Fixed: after an extension update, YouTube tabs that were already open
+>   kept a dead Summarize button until manually reloaded. Updates now clean
+>   up and rebuild the UI in open tabs on their own.
+> - Fixed: changing the model in settings now always takes effect. Before,
+>   re-summarizing a video you had already summarized could silently serve
+>   the previous model's cached summary.
+> - Fixed: summaries that stopped partway through and never finished on
+>   reasoning models (e.g. Google Gemini Flash): those models spend the
+>   output-token budget on hidden thinking, so the visible summary was cut
+>   off silently. The default budget is now larger, and if a summary is
+>   still cut short the panel says so and points at the setting to raise.
+> - If the provider stops a summary early (content filter), the panel now
+>   shows a note instead of ending silently.
+> - A dead connection now fails with a clear error after two minutes of
+>   silence instead of leaving the panel frozen.
+
+**Reviewer notes delta (prepend to the standing notes above):**
+
+> Changes in 0.5.3 vs 0.5.2 are confined to the LLM call path, its settings,
+> and the panel's new model picker; full diff:
+> https://github.com/NaLG/yt-sum/compare/08bcc40...FILL_IN_053_COMMIT
+>
+> - src/background/background.js: streaming reader now tracks the provider's
+>   finish/stop reason and reports truncation or content-filter stops to the
+>   panel as a "notice" message; a 120s no-data watchdog (AbortController)
+>   aborts dead connections; in-stream error events throw instead of being
+>   skipped; stream timings land in the existing debug ring buffer. Default
+>   maxTokens raised from 1500 to 4000 (reasoning models spend the same
+>   budget on hidden thinking). New: extraModels list in storage.local; a
+>   summarize request may name one entry, whose non-empty fields override
+>   the main settings. The main API key is never sent to an endpoint other
+>   than the main one (enforced in getConfig AND at save time).
+> - src/options/options.{html,js,css}: "Extra models" section. Rows are
+>   prefilled with the main endpoint/key; a row pointing at a different
+>   endpoint must have its own key. All needed origins are requested in ONE
+>   permissions.request call on Save (same user-gesture flow as before; all
+>   LLM hosts remain optional_permissions). The model <select> was replaced
+>   by a plain-DOM type-to-filter combobox (shared by the main field and the
+>   rows); each row can load the live /models catalog from its own endpoint.
+>   Origin patterns are now built from protocol + hostname instead of
+>   URL.origin, because match patterns cannot carry a port (fixes runtime
+>   grants for local endpoints like Ollama on :11434).
+> - src/content/content.js + content.css: a native select in the panel bar
+>   (only rendered when extra models exist) re-summarizes with the picked
+>   model; summary cache is now keyed per model, which is the cache fix
+>   above. The picker list arrives via a sanitized getModels message (labels
+>   and model ids only, never keys). Notices render as a muted line via
+>   textContent only (injection safe, same as all model output). On startup
+>   the script removes any button/panel left by a previous script generation
+>   (Firefox injects the updated script into open tabs; the old UI's
+>   listeners are dead), so updates heal open tabs without a reload.
+> - test/smoke-full.mjs: mock LLM records every request's model + auth
+>   header; suite asserts the model switch propagates, the picker drives
+>   requests with the entry's own key, and the truncation notice renders.
+> - Manifest change: version only. No new permissions, hosts, or APIs.
+
 ## Screenshots to attach
 
 - Desktop: the Summarize button left of the like control + a rendered summary panel.

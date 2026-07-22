@@ -1,15 +1,4 @@
 #!/usr/bin/env node
-// Transcript extraction probe — validates the exact pathway the extension uses,
-// runnable from plain Node (no deps, Node 18+). Usage:
-//   node test/probe.mjs                      # standard suite: short / ~30min / ~2hr videos
-//   node test/probe.mjs VIDEO_ID [...]       # probe specific videos
-//   node test/probe.mjs --burst N            # N sequential extractions to observe rate limiting
-//
-// Pathway under test (primary path of the extension):
-//   1. GET  https://www.youtube.com/watch?v=ID          -> bootstrap (api key, client version, transcript params)
-//   2. POST https://www.youtube.com/youtubei/v1/get_transcript  -> full transcript in ONE response
-// Also probes the legacy timedtext fallback to measure how often it is PoToken-gated (empty 200).
-
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 Firefox/140.0";
 
@@ -29,7 +18,6 @@ function rx(html, re, group = 1) {
   return m ? m[group] : null;
 }
 
-// Values captured out of inline JSON carry JSON string escapes (= etc.) — unescape them.
 function jsonUnescape(s) {
   if (s == null) return s;
   try {
@@ -39,7 +27,6 @@ function jsonUnescape(s) {
   }
 }
 
-// Extract a balanced JSON object starting at the first { after `anchor`.
 function extractJsonObject(html, anchor) {
   const idx = html.indexOf(anchor);
   if (idx === -1) return null;
@@ -73,8 +60,6 @@ function extractJsonObject(html, anchor) {
   return null;
 }
 
-// --- Step 1: bootstrap from watch page HTML -------------------------------
-
 async function getBootstrap(videoId) {
   const t0 = performance.now();
   const html = await fetchText(`https://www.youtube.com/watch?v=${videoId}&hl=en`);
@@ -99,8 +84,6 @@ async function getBootstrap(videoId) {
 
   return { videoId, html, apiKey, clientVersion, context, params, title, lengthSeconds, captionTracks, fetchMs: ms };
 }
-
-// --- Step 2: InnerTube get_transcript (primary path) ----------------------
 
 function collectSegments(node, out = []) {
   if (Array.isArray(node)) {
@@ -133,8 +116,6 @@ async function getTranscript(boot) {
         "x-youtube-client-version": boot.clientVersion,
       },
       body: JSON.stringify({
-        // Send the page's own INNERTUBE_CONTEXT verbatim (includes visitorData) —
-        // minimal hand-built contexts trip "Precondition check failed" validation.
         context: boot.context ?? {
           client: { clientName: "WEB", clientVersion: boot.clientVersion, hl: "en", gl: "US" },
         },
@@ -151,11 +132,8 @@ async function getTranscript(boot) {
   return { ok: segments.length > 0, status, ms, bytes: body.length, segments: segments.length, chars, sample: segments };
 }
 
-// --- Legacy fallback: timedtext via captionTracks baseUrl -----------------
-
 async function getTimedtext(boot) {
   if (!boot.captionTracks?.length) return { ok: false, note: "no captionTracks in page" };
-  // prefer English or first track
   const track =
     boot.captionTracks.find((t) => (t.languageCode || "").startsWith("en")) || boot.captionTracks[0];
   const potGated = /[?&]exp=xpe/.test(track.baseUrl) ? "exp=xpe present" : "no exp=xpe";
@@ -180,10 +158,7 @@ async function getTimedtext(boot) {
   return { ok: chars > 0, status: 200, ms, bytes: body.length, events, chars, potGated };
 }
 
-// --- Search helper: find long videos to test with --------------------------
-
 function parseDuration(str) {
-  // "1:23:45" or "23:45" -> seconds
   const parts = str.split(":").map(Number);
   return parts.reduce((acc, p) => acc * 60 + p, 0);
 }
@@ -213,8 +188,6 @@ async function searchVideos(query) {
   if (!raw) throw new Error("could not parse ytInitialData from search results");
   return collectVideoRenderers(JSON.parse(raw));
 }
-
-// --- Reporting -------------------------------------------------------------
 
 function fmtDur(seconds) {
   const h = Math.floor(seconds / 3600),
@@ -269,8 +242,6 @@ async function probeVideo(videoId, label = "") {
   return { videoId, ok: !!tr.ok, totalMs, chars: tr.chars, seconds: boot.lengthSeconds, timedtextOk: !!tt.ok };
 }
 
-// --- Main ------------------------------------------------------------------
-
 const args = process.argv.slice(2);
 
 if (args[0] === "--burst") {
@@ -288,7 +259,6 @@ if (args[0] === "--burst") {
 } else if (args.length > 0) {
   for (const id of args) await probeVideo(id);
 } else {
-  // Standard suite: a short video plus discovered ~30min and ~2h+ videos.
   console.log("Discovering test videos via YouTube search...");
   const found = await searchVideos("lex fridman podcast");
   const mid = found.find((v) => v.seconds >= 1500 && v.seconds <= 3600);

@@ -1,25 +1,5 @@
 #!/usr/bin/env node
-// Shorts button smoke test. Default is OFF: no button on /shorts/ (caption
-// coverage there is spotty; extraction itself works via playback capture when
-// captions exist, see test/probe-shorts-desync.mjs). The shortsButton setting
-// opts in to a round logo button in the shorts action rail.
-//
-// Deterministic checks, real extension in a real Firefox (web-ext):
-//   1. content script IS active on the shorts page (absence isn't vacuous)
-//   2. the page really rendered the shorts/reel UI
-//   3. default (toggle off): no #yapsum-btn appears in a 12s watch window
-//   4. a planted decoy #yapsum-btn is removed by ensureButton's shorts guard
-//      (exercises the SPA-navigation cleanup branch)
-//   5. shortsButton=true: a round logo button appears (img, circle-sized)
-//   6. shortsButton=false again: the button is removed
-// A viewport screenshot is saved to test/artifacts/shorts.png as a rendering
-// artifact for release review (advisory only, never a gate).
-//
-//   node test/smoke-shorts.mjs [SHORTS_VIDEO_ID]
-//
-// Exit 0 when every assertion passes.
-
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { mkdtempSync, cpSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -32,7 +12,6 @@ const VIDEO = process.argv[2] || "eCS01HnPdSs";
 const SHORTS_URL = `https://www.youtube.com/shorts/${VIDEO}`;
 const DEBUG = process.env.YAPSUM_DEBUG === "1";
 
-// ---- relay server -----------------------------------------------------------
 let resolveReport = null;
 const server = createServer((req, res) => {
   const cors = { "access-control-allow-origin": "*", "access-control-allow-headers": "content-type" };
@@ -54,12 +33,11 @@ const server = createServer((req, res) => {
 });
 const PORT = await new Promise((r) => server.listen(0, "127.0.0.1", () => r(server.address().port)));
 
-// ---- temp extension = real src + reporter -----------------------------------
 const ext = mkdtempSync(join(tmpdir(), "yapsum-shorts-"));
 cpSync(SRC, ext, { recursive: true });
 const mf = JSON.parse(readFileSync(join(ext, "manifest.json"), "utf8"));
-mf.permissions.push("http://127.0.0.1/*", "<all_urls>"); // captureVisibleTab needs <all_urls>
-mf.content_scripts[0].js.push("shorts-reporter.js"); // runs after content.js
+mf.permissions.push("http://127.0.0.1/*", "<all_urls>");
+mf.content_scripts[0].js.push("shorts-reporter.js");
 mf.background.scripts.push("shorts-bg.js");
 writeFileSync(join(ext, "manifest.json"), JSON.stringify(mf));
 
@@ -141,14 +119,11 @@ writeFileSync(
    })();`
 );
 
-// ---- launch ------------------------------------------------------------------
+const profileDir = mkdtempSync(join(tmpdir(), "yapsum-ffp-"));
 const child = spawn("web-ext", [
   "run", "--source-dir", ext, "--firefox", FIREFOX,
-  "--firefox-profile", mkdtempSync(join(tmpdir(), "yapsum-ffp-")), "--profile-create-if-missing",
+  "--firefox-profile", profileDir, "--profile-create-if-missing",
   "--start-url", SHORTS_URL, "--no-reload", "--no-input",
-  // Headed Firefox can't start while the macOS session is locked (WindowServer
-  // denies it and web-ext dies on ECONNREFUSED); headless renders fine and
-  // Firefox's headless UA is identical, so YouTube behaves the same.
   ...(process.env.YAPSUM_HEADLESS === "1" ? ["--arg=-headless"] : []),
 ], { stdio: ["ignore", "pipe", "pipe"] });
 if (DEBUG) {
@@ -161,9 +136,9 @@ const report = await new Promise((resolve) => {
   setTimeout(() => resolve({ error: "timeout (120s)" }), 120000);
 });
 try { child.kill("SIGTERM"); } catch {}
+try { execFileSync("/bin/sh", ["-c", `sleep 2; pkill -f 'firefox.*-profile ${tmpdir()}'; true`]); } catch {}
 server.close();
 
-// ---- assertions --------------------------------------------------------------
 let failures = 0;
 const check = (name, ok, detail = "") => {
   console.log(`${ok ? "✓" : "✗"} ${name}${detail ? "  " + detail : ""}`);

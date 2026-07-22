@@ -31,15 +31,13 @@
         </label>
 
         <label>
-          Model
+          Default model
           <div class="model-row">
-            <select id="modelSelect">
-              <option value="">Pick a model…</option>
-            </select>
+            <input id="label" class="main-label" type="text" placeholder="label" />
+            <input id="model" type="text" spellcheck="false" placeholder="model id (type to filter suggestions)" />
             <button type="button" id="loadModels" title="Load this provider's live model list">↻ Load models</button>
           </div>
-          <input id="model" type="text" spellcheck="false" placeholder="model id (pick above, or type a custom one)" />
-          <small id="modelHint">Pick from the dropdown, or type any model id. Click "Load models" to pull your provider's live catalog.</small>
+          <small id="modelHint">The label is what the panel's model picker shows; it auto-fills from the model id. Type in the model field to filter suggestions, or enter any custom id. "Load models" pulls your provider's live catalog into the list.</small>
         </label>
 
         <label>
@@ -58,6 +56,15 @@
             <a href="https://z.ai/model-api" target="_blank" rel="noopener">Z.ai</a>.
             Or run a local model, no key at all: <a href="https://ollama.com" target="_blank" rel="noopener">Ollama</a>, <a href="https://lmstudio.ai" target="_blank" rel="noopener">LM Studio</a>.</small>
         </label>
+
+        <div class="field">
+          Extra models (optional; adds a model picker to the summary panel)
+          <div id="extraModelsList" class="xm-list"></div>
+          <div class="model-row">
+            <button type="button" id="addModel">+ Add model</button>
+          </div>
+          <small>For deeper, cheaper, or just different takes on the same video. New entries reuse your main endpoint and key; expand "Endpoint &amp; key" on a row to give one its own. The label is what the panel's picker shows, it auto-fills from the model id. A row's ↻ loads the model catalog from that row's endpoint.</small>
+        </div>
 
         <label>
           System prompt (controls tone, length, and style)
@@ -92,6 +99,10 @@
 
         <div class="field">
           Summary panel
+          <label class="check-row">
+            <input type="checkbox" id="autoSummarize" checked />
+            <span>Auto-summarize: clicking Summarize immediately runs your default model. Turn this off to have the panel open and wait, so you can pick a different model or ask a question first, with nothing billed until you say go.</span>
+          </label>
           <label class="check-row">
             <input type="checkbox" id="collapseInPlace" />
             <span>Collapse in place: clicking the panel's title bar folds it up to just its header, right where it sits, instead of docking it as a pill in the bottom corner. Desktop only.</span>

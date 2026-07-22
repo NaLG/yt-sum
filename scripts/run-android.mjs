@@ -1,14 +1,7 @@
 #!/usr/bin/env node
-// Launch yap-sum on a USB-connected Android device running Firefox, via web-ext.
-// Prereqs (one-time on the phone):
-//   1. Enable Developer options -> USB debugging.
-//   2. In Firefox for Android: Settings -> Remote debugging via USB -> ON.
-//   3. Plug in over USB, accept the "Allow USB debugging?" prompt.
-// Then: `node scripts/run-android.mjs` (or `npm run run:android`).
-
 import { execFileSync, spawn } from "node:child_process";
 
-const APK = process.env.YAPSUM_FIREFOX_APK || "org.mozilla.firefox"; // release; beta=org.mozilla.firefox_beta, nightly=org.mozilla.fenix
+const APK = process.env.YAPSUM_FIREFOX_APK || "org.mozilla.firefox";
 const START_URL = process.argv[2] || "https://www.youtube.com/watch?v=eIho2S0ZahI";
 
 function adbDevices() {

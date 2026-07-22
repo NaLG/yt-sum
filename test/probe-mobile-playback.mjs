@@ -1,22 +1,11 @@
 #!/usr/bin/env node
-// Validate the mobile Tier-1 fix hypothesis: on m.youtube.com the player does
-// NOT fetch the transcript/caption track until playback starts. This probe
-// loads on the real mobile site (Firefox Nightly, which grants webRequest to
-// temp installs), watches get_transcript + timedtext network requests, and:
-//   1. waits paused, records whether any transcript fetch fired (expect: no)
-//   2. calls video.play() MUTED, records whether one fires now (expect: yes)
-//   3. pauses + restores.
-// If a fetch appears only after play(), the playback-nudge fix is correct.
-//
-// Usage: . scripts/android-env.sh && node test/probe-mobile-playback.mjs [VIDEO_ID]
-
 import { spawn, execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:http";
 
-const FIREFOX_APK = process.env.YAPSUM_FIREFOX_APK || "org.mozilla.fenix"; // Nightly
+const FIREFOX_APK = process.env.YAPSUM_FIREFOX_APK || "org.mozilla.fenix";
 const videoId = process.argv[2] || "eIho2S0ZahI";
 
 let resolveReport = null;
@@ -46,7 +35,6 @@ writeFileSync(
     content_scripts: [{ matches: ["https://m.youtube.com/watch*", "https://www.youtube.com/watch*"], js: ["probe.js"], run_at: "document_idle" }],
   })
 );
-// Background: log transcript-bearing requests with timestamps; answer "fired since T?"
 writeFileSync(
   join(extDir, "bg.js"),
   `const hits = [];
@@ -61,7 +49,6 @@ writeFileSync(
      if (msg.report) fetch("http://127.0.0.1:${PORT}/report", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(msg.report) }).catch(() => {});
    });`
 );
-// Content: paused baseline → play muted → restore; ask bg what fired in each window.
 writeFileSync(
   join(extDir, "probe.js"),
   `(async () => {
@@ -115,10 +102,10 @@ const paused = (report.pausedWindow || []).length, played = (report.playWindow |
 if (!report.error) {
   console.log(`\nBaseline (paused ${6}s): ${paused} transcript fetch(es). After play(): ${played}.`);
   console.log(paused === 0 && played > 0
-    ? "✅ CONFIRMED: transcript fetch fires only after playback — the playback-nudge fix is correct."
+    ? "✅ CONFIRMED: transcript fetch fires only after playback; the playback-nudge fix is correct."
     : paused > 0
-      ? "ℹ️ transcript fetched while paused too — nudge still harmless, but cold Summarize should already work here."
-      : "❌ no transcript fetch even after play — this video needs the desktop/iframe fallback.");
+      ? "ℹ️ transcript fetched while paused too; nudge still harmless, but cold Summarize should already work here."
+      : "❌ no transcript fetch even after play; this video needs the desktop/iframe fallback.");
 }
 server.close();
 process.exit(report.error ? 1 : 0);
