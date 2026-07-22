@@ -170,7 +170,7 @@ transmitted to the developer; there is no backend.
 > Changes in 0.5.4 vs 0.5.2 are confined to the LLM call path, its settings,
 > and the panel's new model picker. The diff also carries a repo-wide comment
 > removal and test-only tooling (test/, never shipped in the package); full
-> diff: https://github.com/NaLG/yt-sum/compare/08bcc40...FILL_IN_054_COMMIT
+> diff: https://github.com/NaLG/yt-sum/compare/08bcc40...dc9d6f4
 >
 > - src/background/background.js: streaming reader now tracks the provider's
 >   finish/stop reason and reports truncation or content-filter stops to the
