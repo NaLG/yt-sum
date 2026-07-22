@@ -3,8 +3,8 @@ import { readFileSync, globSync } from "node:fs";
 import { createRequire } from "node:module";
 
 const espree = createRequire(import.meta.url)("espree");
-const COMMENT_LINE_BUDGET = 8;
-const CSS_COMMENT_BUDGET = 4;
+const COMMENT_LINE_BUDGET = 2;
+const CSS_COMMENT_BUDGET = 0;
 
 let failures = 0;
 const fail = (msg) => {
@@ -29,7 +29,7 @@ for (const path of jsFiles) {
   for (const c of comments)
     for (let l = c.loc.start.line; l <= c.loc.end.line; l++) commentLines.add(l);
   if (commentLines.size > COMMENT_LINE_BUDGET)
-    fail(`${path}: ${commentLines.size} comment lines exceed the budget of ${COMMENT_LINE_BUDGET}; make the code self-defining instead`);
+    fail(`${path}: ${commentLines.size} comment lines exceed the budget of ${COMMENT_LINE_BUDGET}; make the code self-defining; rationale goes in docs/ARCHITECTURE.md`);
 }
 
 for (const path of globSync("src/**/*.css")) {

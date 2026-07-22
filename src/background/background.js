@@ -1,5 +1,3 @@
-// Transcript endpoints are PoToken-gated, so we read YouTube's own player
-// requests at the network layer instead of fetching them ourselves.
 const GT_URLS = ["*://*.youtube.com/youtubei/v1/get_transcript*"];
 const TT_URLS = ["*://*.youtube.com/api/timedtext*"];
 const capturedByVideo = new Map();
@@ -74,7 +72,6 @@ browser.webRequest.onBeforeRequest.addListener(
       details.requestId,
       (text) => {
         dbg("timedtext response", { bytes: text.length, videoId, first60: text.slice(0, 60) });
-        // never lastCapture here: related-video previews fetch OTHER videos' captions
         if (text.length > 50 && videoId) {
           capturedByVideo.set(videoId, { at: Date.now(), kind: "timedtext", text });
           pruneCaptures();

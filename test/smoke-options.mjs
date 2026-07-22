@@ -207,7 +207,6 @@ try {
   `);
   check("row catalog stays row-local", mainList.length >= 3 && !mainList.includes("mock/alpha"), `main sees ${mainList.length} options`);
 
-  // permissions.request needs a trusted gesture: WebDriver element click, not .click()
   const found = await wd("POST", `/session/${sid}/element`, { using: "css selector", value: "#save" });
   const eid = Object.values(found)[0];
   await wd("POST", `/session/${sid}/element/${eid}/click`, {});

@@ -76,7 +76,6 @@ function makeCombobox(input, getOptions) {
   let items = [];
   let sel = -1;
 
-  // 0 = plain substring, 1 = split match ("kimi3" finds "kimi-k3"), -1 = miss
   function matchRank(q, id) {
     const hay = id.toLowerCase();
     if (hay.includes(q)) return 0;
@@ -111,7 +110,7 @@ function makeCombobox(input, getOptions) {
       const el = document.createElement("div");
       el.className = "combo-opt";
       el.textContent = items[i];
-      el.addEventListener("mousedown", (e) => { e.preventDefault(); pick(i); }); // mousedown wins against input blur
+      el.addEventListener("mousedown", (e) => { e.preventDefault(); pick(i); });
       list.appendChild(el);
     }
     list.hidden = !items.length;
@@ -319,8 +318,6 @@ async function ensureHostPermission(baseUrl) {
   return ensureHostPermissions([baseUrl]);
 }
 
-// One combined permissions.request: the Save-click gesture is consumed by the
-// first prompt, and awaiting anything first drops it.
 async function ensureHostPermissions(baseUrls) {
   const origins = [];
   for (const u of baseUrls) {

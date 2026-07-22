@@ -374,7 +374,7 @@
   }
   function rememberSummary(key, entry) {
     summaryCache.delete(key);
-    entry.ts = Date.now(); // stored by reference: waiting entries and qa arrays mutate in place
+    entry.ts = Date.now();
     summaryCache.set(key, entry);
     for (const k of summaryCache.keys()) {
       if (summaryCache.size <= SUMMARY_CACHE_MAX) break;
@@ -489,7 +489,7 @@
   async function runSummarize(panel, models, sig, entry) {
     setPickerDisabled(panel, true);
     setPanel(panel, "Fetching transcript…");
-    kickMobilePlayback(); // must stay before the first await: it needs the user-gesture context
+    kickMobilePlayback();
     const playHint = setTimeout(() => {
       const v = document.querySelector("video");
       if (location.hostname === "m.youtube.com" || !v || v.paused)
@@ -581,7 +581,7 @@
       aEl.scrollIntoView({ block: "nearest" });
       try {
         if (!ctx.transcript) {
-          kickMobilePlayback(); // before the first await: it needs the user-gesture context
+          kickMobilePlayback();
           aEl.textContent = "Fetching transcript…";
           const playHint = setTimeout(() => {
             const v = document.querySelector("video");
@@ -661,7 +661,6 @@
     if (last < text.length) parent.appendChild(document.createTextNode(text.slice(last)));
   }
 
-  // model output only ever enters the DOM via textContent
   function renderMarkdown(md, container) {
     container.classList.remove("yapsum-error");
     container.textContent = "";
@@ -920,7 +919,6 @@
     }
     ensureButton();
   });
-  // a previous script generation's UI has dead listeners; updates self-heal open tabs
   document.getElementById("yapsum-btn")?.remove();
   document.getElementById("yapsum-panel")?.remove();
   observer.observe(document.documentElement, { childList: true, subtree: true });

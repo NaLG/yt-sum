@@ -16,17 +16,29 @@ LLM API key. No backend, no tracking.
   return-youtube-summary@nalg.dev, CSS .yapsum-* classes, storage keys, local
   dir / npm name yap-sum.
 
-## CURRENT STATE (2026-07-15): 0.5.1 LIVE on AMO, 0.5.2 built and handed off
+## CURRENT STATE (2026-07-22): 0.5.2 live, 0.5.4 submitted for review
 
-0.5.1 approved and public on the listing (verified 2026-07-15). 0.5.2 is
-committed, pushed, gate-green (all 6 suites headless), built as
-dist/return_youtube_summary-0.5.2.zip, release notes + reviewer notes ready
-in SUBMISSION.md ("0.5.2 version submission"); the user was submitting it
-manually via the Hub at session close. NEXT SESSION: verify 0.5.2 appears on
-the listing (Manage Status & Versions or the public page), then work the
-remaining queue below (icon, screenshots, privacy re-paste, store-install
-verification). 0.5.2 contents: shorts opt-in rail button, movable/resizable
-panel (desktop), collapseInPlace setting, run-all release gate, AGPL-3.0
+0.5.2 approved and public (verified 2026-07-20). 0.5.4 committed, pushed
+(dc9d6f4 + kit fill 30c8e6b), gate-green (9 checks), built as
+dist/return_youtube_summary-0.5.4.zip and submitted listed via web-ext sign
+with dist/amo-metadata-0.5.4.json. 0.5.3 was consumed by an unlisted
+self-distribution sign on the production id and can never be a store
+version; sideload/test signs go to the yap-sum@nalg.dev Hub entry (swap the
+manifest id temporarily). 0.5.4 contents: extra models + always-visible
+panel model chip with per-model summaries/Q&A/cache, model labels,
+type-to-filter comboboxes with split-token search, per-row catalog loading,
+auto-summarize toggle with a waiting state, streaming finish-reason notices
++ stall watchdog, per-model cache keys, port-free origin patterns, update
+self-heal for open tabs, capture-map pruning, near-zero-comment codebase
+(rationale in docs/ARCHITECTURE.md, budget lint-enforced), gate grown to 9
+checks (style lint, leak bounds, leaked-browser assertion). NEXT SESSION:
+verify 0.5.4 appears on the listing, then the remaining Hub queue below
+(icon, screenshots, store-install verification).
+
+## PRIOR STATE (2026-07-15): 0.5.1 live, 0.5.2 handed to the Hub
+
+0.5.2 contents: shorts opt-in rail button, movable/resizable panel
+(desktop), collapseInPlace setting, run-all release gate, AGPL-3.0
 relicense (repo aligned to the listing; was MIT).
 
 ## PRIOR STATE (2026-07-11): store identity resolved, v0.5.0 listed

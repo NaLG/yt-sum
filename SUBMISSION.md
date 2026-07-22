@@ -211,8 +211,8 @@ transmitted to the developer; there is no backend.
 ## Screenshots to attach
 
 - Desktop: the Summarize button left of the like control + a rendered summary panel.
-- Mobile: capture fresh; `docs/mobile-summarize-button.png` is STALE (predates
-  the left-of-like placement and the current styles).
+- Mobile: capture fresh from a phone or emulator (no usable capture exists in
+  the repo).
 - The settings page (provider presets, model dropdown, button-style picker).
 
 ## Build & sign

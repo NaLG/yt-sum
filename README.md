@@ -16,6 +16,11 @@ you send to the endpoint you chose.
 - **Bring your own key:** any OpenAI-compatible endpoint, eg OpenRouter/z.ai, or a
   local model (Ollama / LM Studio).
 - **Follow-up Q&A:** ask questions about the video, based on its transcript.
+- **Multiple models:** add extra models (same key or their own), switch from a
+  chip on the panel, and give each a label. Each model keeps its own summary
+  and Q&A per video.
+- **Auto-summarize toggle:** turn it off and the panel opens and waits, so you
+  can pick a model or ask a question first; nothing is billed until you say go.
 - **Long videos** are summarized in parts, then combined into one.
 - **Movable, resizable panel** (desktop): drag the title bar to move it, resize
   from any edge or corner. Click the title bar to collapse it: to a corner pill,
