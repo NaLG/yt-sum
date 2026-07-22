@@ -122,7 +122,7 @@ transmitted to the developer; there is no backend.
 > title bar and resized from its edges and corners. The two new settings are
 > on the options page.
 
-## 0.5.3 version submission (2026-07-20)
+## 0.5.4 version submission (2026-07-22)
 
 **Release notes (paste into the version's "Release notes" field):**
 
@@ -139,6 +139,10 @@ transmitted to the developer; there is no backend.
 >   the live model catalog from its own endpoint. The panel's model chip is
 >   always shown, so you can see which model will run, and every model
 >   (including the default) can carry a short label of your choosing.
+> - Model search matches split queries: typing kimi3 finds kimi-k3, and
+>   gemini35 finds gemini-3.5-flash. Exact matches always list first.
+> - The settings page reads better on narrow screens: the label and model
+>   fields each get a full row.
 > - New setting "Auto-summarize" (on by default, matching old behavior).
 >   Turned off, the Summarize button opens the panel in a waiting state: pick
 >   a model or ask a question first, and nothing is billed until you click
@@ -163,10 +167,10 @@ transmitted to the developer; there is no backend.
 
 **Reviewer notes delta (prepend to the standing notes above):**
 
-> Changes in 0.5.3 vs 0.5.2 are confined to the LLM call path, its settings,
+> Changes in 0.5.4 vs 0.5.2 are confined to the LLM call path, its settings,
 > and the panel's new model picker. The diff also carries a repo-wide comment
 > removal and test-only tooling (test/, never shipped in the package); full
-> diff: https://github.com/NaLG/yt-sum/compare/08bcc40...042f16e
+> diff: https://github.com/NaLG/yt-sum/compare/08bcc40...FILL_IN_054_COMMIT
 >
 > - src/background/background.js: streaming reader now tracks the provider's
 >   finish/stop reason and reports truncation or content-filter stops to the

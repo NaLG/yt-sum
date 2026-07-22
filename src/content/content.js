@@ -581,8 +581,19 @@
       aEl.scrollIntoView({ block: "nearest" });
       try {
         if (!ctx.transcript) {
+          kickMobilePlayback(); // before the first await: it needs the user-gesture context
           aEl.textContent = "Fetching transcript…";
-          ctx.transcript = (await getTranscript()).text;
+          const playHint = setTimeout(() => {
+            const v = document.querySelector("video");
+            if (location.hostname === "m.youtube.com" || !v || v.paused)
+              aEl.textContent = "Fetching transcript…\nTip: play the video to load the transcript.";
+          }, 2500);
+          try {
+            ctx.transcript = (await getTranscript()).text;
+          } finally {
+            clearTimeout(playHint);
+            restoreMobilePlayback();
+          }
           aEl.textContent = "…";
         }
         let acc = "", lastRender = 0;

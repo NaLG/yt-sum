@@ -122,7 +122,7 @@ writeFileSync(
 const profileDir = mkdtempSync(join(tmpdir(), "yapsum-ffp-"));
 const child = spawn("web-ext", [
   "run", "--source-dir", ext, "--firefox", FIREFOX,
-  "--firefox-profile", profileDir, "--profile-create-if-missing",
+  "--firefox-profile", profileDir, "--profile-create-if-missing", "--pref", "app.update.disabledForTesting=true",
   "--start-url", SHORTS_URL, "--no-reload", "--no-input",
   ...(process.env.YAPSUM_HEADLESS === "1" ? ["--arg=-headless"] : []),
 ], { stdio: ["ignore", "pipe", "pipe"] });

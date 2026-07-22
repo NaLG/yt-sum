@@ -76,11 +76,35 @@ function makeCombobox(input, getOptions) {
   let items = [];
   let sel = -1;
 
+  // 0 = plain substring, 1 = split match ("kimi3" finds "kimi-k3"), -1 = miss
+  function matchRank(q, id) {
+    const hay = id.toLowerCase();
+    if (hay.includes(q)) return 0;
+    let from = 0;
+    for (const ch of q) {
+      if (!/[a-z0-9]/.test(ch)) continue;
+      const at = hay.indexOf(ch, from);
+      if (at === -1) return -1;
+      from = at + 1;
+    }
+    return 1;
+  }
+
   function render() {
     if (document.activeElement !== input) { list.hidden = true; return; }
     const q = input.value.trim().toLowerCase();
     const opts = getOptions();
-    items = q ? opts.filter((o) => o.toLowerCase().includes(q)) : opts;
+    if (q) {
+      const ranked = [];
+      for (const o of opts) {
+        const rank = matchRank(q, o);
+        if (rank >= 0) ranked.push([rank, o]);
+      }
+      ranked.sort((a, b) => a[0] - b[0]);
+      items = ranked.map((r) => r[1]);
+    } else {
+      items = opts;
+    }
     list.innerHTML = "";
     sel = -1;
     for (let i = 0; i < items.length; i++) {

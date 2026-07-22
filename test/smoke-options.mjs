@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn, execSync as sh, execFileSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
@@ -57,6 +57,7 @@ try {
         prefs: {
           "extensions.webextensions.uuids": JSON.stringify({ [ADDON_ID]: UUID }),
           "extensions.webextOptionalPermissionPrompts": false,
+          "app.update.disabledForTesting": true,
         },
       },
       timeouts: { script: 20000, pageLoad: 30000 },
@@ -97,8 +98,8 @@ try {
     return [...m.parentNode.querySelectorAll('.combo-opt')].map(o => o.textContent);
   `);
   check(
-    "typing filters the model list",
-    afterFilter.length >= 1 && afterFilter.every((o) => /glm/i.test(o)),
+    "typing filters and ranks substring hits first",
+    afterFilter.length >= 2 && /glm/i.test(afterFilter[0]) && /glm/i.test(afterFilter[1]),
     JSON.stringify(afterFilter)
   );
   const afterPick = await ex(sid, `
@@ -110,6 +111,22 @@ try {
   `);
   check("picking a suggestion fills model field", afterPick.model === afterPick.picked, `picked="${afterPick.picked}" model="${afterPick.model}"`);
   check("picking closes the list", afterPick.listHidden === true);
+
+  const splitSearch = await ex(sid, `
+    const m = document.getElementById('model');
+    m.focus();
+    m.value = 'gemini35';
+    m.dispatchEvent(new Event('input', { bubbles: true }));
+    const opts = [...m.parentNode.querySelectorAll('.combo-opt')].map(o => o.textContent);
+    m.value = 'google/gemini-3.5-flash';
+    m.dispatchEvent(new Event('input', { bubbles: true }));
+    return opts;
+  `);
+  check(
+    "split query matches across separators (gemini35)",
+    splitSearch.length === 1 && splitSearch[0] === "google/gemini-3.5-flash",
+    JSON.stringify(splitSearch)
+  );
 
   const keyState = await ex(sid, `
     const el = document.getElementById('apiKey');
@@ -147,8 +164,8 @@ try {
   check("row key prefilled from main key", rowState.key === "sk-smoke-test", `key="${rowState.key}"`);
   check("row endpoint prefilled from main", rowState.baseUrl === "https://openrouter.ai/api/v1", `baseUrl="${rowState.baseUrl}"`);
   check(
-    "row combobox filters over the shared catalog",
-    rowState.filtered.length >= 1 && rowState.filtered.every((o) => /glm/i.test(o)),
+    "row combobox filters over the shared catalog, ranked",
+    rowState.filtered.length >= 2 && /glm/i.test(rowState.filtered[0]) && /glm/i.test(rowState.filtered[1]),
     JSON.stringify(rowState.filtered)
   );
 
@@ -229,6 +246,29 @@ try {
     if (badStatus && !/^saved\.?$/i.test(badStatus.trim())) break;
   }
   check("label-without-model row refuses to save", /no model id/i.test(badStatus), `status="${badStatus}"`);
+
+  await wd("POST", `/session/${sid}/window/rect`, { width: 420, height: 900 });
+  await new Promise((r) => setTimeout(r, 300));
+  const narrow = await ex(sid, `
+    const label = document.getElementById('label');
+    const model = document.getElementById('model');
+    const row = label.closest('.model-row');
+    return {
+      rowW: Math.round(row.getBoundingClientRect().width),
+      labelW: Math.round(label.getBoundingClientRect().width),
+      modelW: Math.round(model.getBoundingClientRect().width),
+    };
+  `);
+  check(
+    "narrow viewport stacks label and model fields",
+    narrow.labelW > narrow.rowW * 0.9 && narrow.modelW > narrow.rowW * 0.55,
+    JSON.stringify(narrow)
+  );
+  await ex(sid, `document.getElementById('label').scrollIntoView({ block: 'center' });`);
+  const shot = await wd("GET", `/session/${sid}/screenshot`);
+  const artifacts = new URL("./artifacts", import.meta.url).pathname;
+  mkdirSync(artifacts, { recursive: true });
+  writeFileSync(`${artifacts}/options-narrow.png`, Buffer.from(shot, "base64"));
 } catch (e) {
   console.log("SMOKE ERROR:", e.message);
   failures++;

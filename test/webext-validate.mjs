@@ -169,7 +169,7 @@ function webExtArgs(videoId, profileDir) {
   return [
     ...common,
     "--start-url", `https://www.youtube.com/watch?v=${videoId}`,
-    "--firefox", FIREFOX, "--firefox-profile", profileDir, "--profile-create-if-missing",
+    "--firefox", FIREFOX, "--firefox-profile", profileDir, "--profile-create-if-missing", "--pref", "app.update.disabledForTesting=true",
     ...(process.env.YAPSUM_HEADLESS === "1" ? ["--arg=-headless"] : []),
   ];
 }

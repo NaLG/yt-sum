@@ -107,7 +107,7 @@ const profileDir = mkdtempSync(join(tmpdir(), "yapsum-ffp-"));
 const webExtArgs = ANDROID
   ? ["run", "--source-dir", ext, "--target", "firefox-android", "--android-device", DEVICE, "--firefox-apk", FIREFOX_APK]
   : ["run", "--source-dir", ext, "--firefox", FIREFOX,
-     "--firefox-profile", profileDir, "--profile-create-if-missing",
+     "--firefox-profile", profileDir, "--profile-create-if-missing", "--pref", "app.update.disabledForTesting=true",
      "--start-url", WATCH_URL, "--no-reload", "--no-input",
      ...(process.env.YAPSUM_HEADLESS === "1" ? ["--arg=-headless"] : [])];
 const child = spawn("web-ext", webExtArgs, { stdio: ["ignore", "pipe", "pipe"] });

@@ -229,3 +229,10 @@ button:hover { filter: brightness(1.05); }
 .xm-adv summary { cursor: pointer; color: var(--muted); }
 .xm-adv select, .xm-adv input { display: block; width: 100%; margin-top: 8px; }
 #addModel { align-self: flex-start; }
+
+@media (max-width: 600px) {
+  .model-row { flex-wrap: wrap; }
+  .model-row .main-label,
+  .xm-row .xm-label { flex: 1 1 100%; }
+  .model-row .combo { flex: 1 1 65%; }
+}
