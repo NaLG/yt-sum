@@ -165,7 +165,7 @@ transmitted to the developer; there is no backend.
 
 > Changes in 0.5.3 vs 0.5.2 are confined to the LLM call path, its settings,
 > and the panel's new model picker; full diff:
-> https://github.com/NaLG/yt-sum/compare/08bcc40...FILL_IN_053_COMMIT
+> https://github.com/NaLG/yt-sum/compare/08bcc40...042f16e
 >
 > - src/background/background.js: streaming reader now tracks the provider's
 >   finish/stop reason and reports truncation or content-filter stops to the
