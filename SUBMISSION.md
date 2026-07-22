@@ -164,8 +164,9 @@ transmitted to the developer; there is no backend.
 **Reviewer notes delta (prepend to the standing notes above):**
 
 > Changes in 0.5.3 vs 0.5.2 are confined to the LLM call path, its settings,
-> and the panel's new model picker; full diff:
-> https://github.com/NaLG/yt-sum/compare/08bcc40...042f16e
+> and the panel's new model picker. The diff also carries a repo-wide comment
+> removal and test-only tooling (test/, never shipped in the package); full
+> diff: https://github.com/NaLG/yt-sum/compare/08bcc40...042f16e
 >
 > - src/background/background.js: streaming reader now tracks the provider's
 >   finish/stop reason and reports truncation or content-filter stops to the
@@ -188,9 +189,11 @@ transmitted to the developer; there is no backend.
 >   URL.origin, because match patterns cannot carry a port (fixes runtime
 >   grants for local endpoints like Ollama on :11434).
 > - src/content/content.js + content.css: a native select in the panel bar
->   (only rendered when extra models exist) re-summarizes with the picked
+>   (always rendered, showing the active model) re-summarizes with the picked
 >   model; summary cache is now keyed per model, which is the cache fix
->   above. The picker list arrives via a sanitized getModels message (labels
+>   above. New autoSummarize setting (default on, the old behavior): turned
+>   off, the panel parks with an explicit run button before any LLM call.
+>   The picker list arrives via a sanitized getModels message (labels
 >   and model ids only, never keys). Notices render as a muted line via
 >   textContent only (injection safe, same as all model output). On startup
 >   the script removes any button/panel left by a previous script generation
