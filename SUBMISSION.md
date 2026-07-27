@@ -231,7 +231,7 @@ transmitted to the developer; there is no backend.
 > Changes in 0.5.5 vs 0.5.4 are three small fixes in the existing capture
 > and panel code plus test-gate coverage for them; no new permissions,
 > hosts, or APIs. Full diff:
-> https://github.com/NaLG/yt-sum/compare/dc9d6f4...FILL
+> https://github.com/NaLG/yt-sum/compare/dc9d6f4...8dd1f0d
 >
 > - src/background/background.js: pruneCaptures() no longer evicts by age;
 >   captures are bounded by the existing 20-entry oldest-first cap only.
