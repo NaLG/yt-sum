@@ -28,9 +28,15 @@ only its own player can mint, so the extension never fetches them itself.
 Blocking webRequest listeners force `Accept-Encoding: identity` on those two
 endpoints and copy response bodies via `filterResponseData` while passing
 them through to the player. Captures land in `capturedByVideo`, keyed by
-video id and pruned on every capture (10 minute TTL, 20 entry cap: the page
-is persistent, and without the cap a long captions-on session accumulates one
-transcript per video watched, forever). `timedtext` captures never set the
+video id and bounded to 20 entries, evicted oldest-first (the page is
+persistent, and without the cap a long captions-on session accumulates one
+transcript per video watched, forever). There is deliberately NO time-based
+eviction: the mweb player fetches captions exactly once per playback and has
+no re-trigger surface (the CC toggle is desktop-only), so an age cutoff turns
+any watch longer than the cutoff into a guaranteed mobile extraction failure.
+That shipped as a 10 minute TTL through 0.5.4, was field-reported on Android
+and emulator-verified, and was removed in 0.5.5; transcripts do not change,
+so staleness is not a risk. `timedtext` captures never set the
 un-keyed `lastCapture` fallback: related-video previews fetch OTHER videos'
 captions and would poison it. The content script requests captures via
 runtime messages and can force a caption fetch by toggling CC or nudging
@@ -68,9 +74,14 @@ and mutated in place: waiting entries gain transcripts, qa arrays grow.
 With `autoSummarize` off, a cache miss parks the panel in a waiting state:
 an explicit run button, with model switching and ask-first both working and
 nothing billed until the user acts. Mobile transcripts only surface during
-playback, so summarize and the waiting-state ask both trigger a playback
-nudge synchronously inside the user gesture (an await first would drop the
-gesture context) and undo it afterward.
+playback, so every gesture entry (`onSummarizeClick`, the waiting-state
+`runSummarize`, `ask`) triggers the playback nudge synchronously inside the
+user gesture, before its first await, and undoes it afterward: an await first
+drops the user-activation and autoplay-blocked phones silently reject
+`play()`. This bug class shipped twice (v0.4.0, and 0.5.3 when the model
+picker refresh landed ahead of the nudge), so `lint-style` now enforces the
+ordering by AST. The nudge is idempotent per video element, letting layered
+entry points share one restore state.
 
 All model output enters the DOM via `textContent` only; `renderMarkdown`
 builds elements and never assigns model text to innerHTML.

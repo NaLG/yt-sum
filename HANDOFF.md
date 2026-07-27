@@ -16,7 +16,68 @@ LLM API key. No backend, no tracking.
   return-youtube-summary@nalg.dev, CSS .yapsum-* classes, storage keys, local
   dir / npm name yap-sum.
 
-## CURRENT STATE (2026-07-22): 0.5.2 live, 0.5.4 submitted for review
+## CURRENT STATE (2026-07-28): 0.5.5 built and gate-green, ready to submit
+
+0.5.5 fixes both Android findings from the triage below: pruneCaptures no
+longer evicts by age (20-entry cap only), onSummarizeClick kicks the mobile
+playback nudge before its first await (idempotent nudge, cached/waiting
+early-returns restore playback), and the mobile failure hint mentions
+captionless videos. Gate grew two teeth: leak-bounds drives a fake clock and
+asserts a capture survives a 30 min watch; lint-style enforces
+kick-before-first-await by AST in every gesture entry (negative-tested
+against the unfixed code). All 9 checks green; emulator-verified on true
+m.youtube.com: fresh video PASS, and the exact pre-fix failure (11 min
+watch, then Summarize, on arj7oStGLkU) now PASSES. Built as
+dist/return_youtube_summary-0.5.5.zip; release notes + reviewer delta in
+SUBMISSION.md ("0.5.5 version submission"). REMAINING: submit 0.5.5 listed
+(web-ext sign with the user's creds, or manual Hub upload), and the standing
+Hub queue (icon, screenshots, store-install verification).
+
+0.5.4 is live on the public listing (verified 2026-07-28; live XPI
+byte-identical to src at dc9d6f4). The user's phone still runs the burned
+0.5.3 sideload and should be updated from the store page.
+
+The user reported "stopped working on Android for a couple videos this
+morning" (play, then Summarize, couldn't-get-a-transcript error). Full
+regression matrix run on desktop + emulator (real extension, true
+m.youtube.com, play-then-summarize): desktop gate 9/9 green, 0.5.3 PASS,
+0.5.4 PASS on fresh AND rewatched captioned videos. NO version regression,
+NO YouTube-side change. Two failure modes reproduce the exact reported
+error:
+
+1. Captionless videos: nothing to capture, error after the ~40s budget.
+   Expected, but the mobile error hint never mentions missing captions
+   (only the shorts hint does); consider adding it.
+2. CONFIRMED: watch longer than 10 minutes, then tap Summarize.
+   pruneCaptures() (background.js, 600s cutoff) runs at armCapture BEFORE
+   the lookup and deletes the keyed capture made at playback start; the
+   mweb player never refetches timedtext during continuous playback and the
+   CC-toggle re-trigger is desktop-only, so extraction is GUARANTEED to
+   fail. Emulator-verified end to end: 11 min watch -> exact user error;
+   netlog shows the successful 200 at playback start and an empty capture
+   map at summarize. The TTL predates 0.5.3 (matches the historical "works
+   95% of the time"). Fix: drop the time-based prune, CAPTURE_MAX=20
+   already bounds memory and transcripts do not change; or raise it to
+   hours.
+
+Also found, code-certain, latent in 0.5.3 AND 0.5.4: onSummarizeClick
+awaits refreshModelPicker() BEFORE runSummarize() calls
+kickMobilePlayback(), killing the tap's user-activation (the v0.4.0 bug
+class), so the cold-tap playback nudge is dead on strict-autoplay phones.
+The 0.5.4 "ask-first fix" patched only the ask path. One-line fix: kick
+synchronously at the top of onSummarizeClick. Not the cause of the user's
+report (they play manually first).
+
+Emulator lessons this session: stripping the desktop UA must also sed
+prefs.js, user.js alone leaves the persisted pref (DEVELOPMENT.md recipe is
+incomplete); Fenix restores tabs across web-ext runs, so probes must close
+stale youtube tabs and target tabs by video id; muted video.play() does NOT
+trigger the mweb timedtext fetch, only playback started through the player
+UI does (a synthetic click on the player container works, untrusted events
+accepted); timedtext URLs carry per-session ei/expire params, so rewatches
+refetch fresh (HTTP-cache invisibility is a non-issue in practice).
+
+## PRIOR STATE (2026-07-22): 0.5.2 live, 0.5.4 submitted for review
 
 0.5.2 approved and public (verified 2026-07-20). 0.5.4 committed, pushed
 (dc9d6f4 + kit fill 30c8e6b), gate-green (9 checks), built as

@@ -208,6 +208,48 @@ transmitted to the developer; there is no backend.
 >   requests with the entry's own key, and the truncation notice renders.
 > - Manifest change: version only. No new permissions, hosts, or APIs.
 
+## 0.5.5 version submission (2026-07-28)
+
+**Release notes (paste into the version's "Release notes" field):**
+
+> Android reliability fixes. No permission changes.
+>
+> - Fixed: on Android, tapping Summarize after watching a video for more
+>   than 10 minutes always failed with "Couldn't get a transcript". The
+>   transcript captured at playback start was being discarded by an internal
+>   10 minute limit; it is now kept for the whole page visit.
+> - Fixed: on phones with autoplay fully blocked, tapping Summarize on a
+>   paused video no longer started playback automatically (a regression
+>   introduced with the model picker), so the transcript never loaded unless
+>   you pressed play yourself first. The tap starts playback again, as it
+>   did before.
+> - The Android failure message now mentions that videos with no captions
+>   at all can't be summarized.
+
+**Reviewer notes delta (append to the standing notes):**
+
+> Changes in 0.5.5 vs 0.5.4 are three small fixes in the existing capture
+> and panel code plus test-gate coverage for them; no new permissions,
+> hosts, or APIs. Full diff:
+> https://github.com/NaLG/yt-sum/compare/dc9d6f4...FILL
+>
+> - src/background/background.js: pruneCaptures() no longer evicts by age;
+>   captures are bounded by the existing 20-entry oldest-first cap only.
+>   The mobile player fetches captions exactly once per playback and there
+>   is no re-trigger surface, so the 10 minute TTL made any longer watch a
+>   guaranteed extraction failure (field-reported, emulator-reproduced).
+> - src/content/content.js: onSummarizeClick() calls kickMobilePlayback()
+>   before its first await; the model-picker refresh await was dropping the
+>   tap's user-activation, so autoplay-blocked phones silently rejected the
+>   nudge's play(). The nudge is idempotent per video element, and the
+>   cached-summary / waiting-panel early returns restore playback state.
+>   The mobile failure hint now mentions captionless videos.
+> - test/leak-bounds.mjs: controllable clock; asserts a capture still
+>   serves after a simulated 30 minute watch. test/lint-style.mjs: AST
+>   check that every gesture entry calls kickMobilePlayback() before its
+>   first await (this ordering bug shipped twice before).
+> - Manifest change: version only.
+
 ## Screenshots to attach
 
 - Desktop: the Summarize button left of the like control + a rendered summary panel.

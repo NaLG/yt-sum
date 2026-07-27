@@ -141,8 +141,6 @@ function getCapturedFor(videoId) {
 
 const CAPTURE_MAX = 20;
 function pruneCaptures() {
-  const cutoff = Date.now() - 600000;
-  for (const [k, v] of capturedByVideo) if (v.at < cutoff) capturedByVideo.delete(k);
   while (capturedByVideo.size > CAPTURE_MAX)
     capturedByVideo.delete(capturedByVideo.keys().next().value);
 }

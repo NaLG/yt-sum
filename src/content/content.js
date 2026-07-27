@@ -343,10 +343,10 @@
 
   let mobilePlayback = null;
   function kickMobilePlayback() {
-    mobilePlayback = null;
     if (location.hostname !== "m.youtube.com") return;
     const v = document.querySelector("video");
     if (!v) return;
+    if (mobilePlayback && mobilePlayback.v === v) return;
     mobilePlayback = { v, wasPaused: v.paused, pos: v.currentTime, muted: v.muted };
     if (v.paused) {
       try { v.muted = true; const p = v.play(); if (p && p.catch) p.catch(() => {}); } catch {}
@@ -452,6 +452,7 @@
   }
 
   async function onSummarizeClick() {
+    kickMobilePlayback();
     const panel = openPanel();
     setCollapsed(panel, false);
     const models = await refreshModelPicker(panel);
@@ -459,12 +460,14 @@
     const key = `${currentVideoId()}::${sig}`;
     const cached = cachedSummary(key);
     if (cached && cached.summary) {
+      restoreMobilePlayback();
       setPanel(panel, "");
       renderMarkdown(cached.summary, panel.querySelector(".yapsum-panel-body"));
       mountFollowup(panel, cached);
       return;
     }
     if (!autoSummarize) {
+      restoreMobilePlayback();
       const entry = cached || { title: document.title.replace(" - YouTube", ""), transcript: null, summary: "", qa: [], modelId: activeModelId };
       if (!cached) rememberSummary(key, entry);
       renderWaiting(panel, models, sig, entry);
@@ -502,7 +505,7 @@
       const hint = isShortsPage()
         ? "\n\nLet the short play for a few seconds, then try again. Note that many Shorts have no captions at all; those can't be summarized."
         : location.hostname === "m.youtube.com"
-          ? "\n\nTry playing the video for a few seconds, then tap Summarize again. If that still fails, tap the ⋮ menu, choose \"Desktop site\", and retry."
+          ? "\n\nTry playing the video for a few seconds, then tap Summarize again. If that still fails, tap the ⋮ menu, choose \"Desktop site\", and retry. Videos with no captions at all can't be summarized."
           : "";
       await showError(panel, `Couldn't get a transcript for this video.${hint}\n\n${e.message}`);
       setPickerDisabled(panel, false);

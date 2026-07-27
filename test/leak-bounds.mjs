@@ -23,8 +23,13 @@ const browser = {
   },
   storage: { local: { get: async () => ({}) } },
 };
+let fakeNow = Date.now();
+class FakeDate extends Date {
+  constructor(...args) { args.length ? super(...args) : super(fakeNow); }
+  static now() { return fakeNow; }
+}
 const ctx = vm.createContext({
-  browser, console: { log: noop }, TextDecoder, URL, JSON, Date, Math,
+  browser, console: { log: noop }, TextDecoder, URL, JSON, Date: FakeDate, Math,
   setTimeout, clearTimeout, atob, fetch: noop, AbortController,
 });
 vm.runInContext(readFileSync(new URL("../src/background/background.js", import.meta.url), "utf8"), ctx);
@@ -51,6 +56,12 @@ const check = (name, ok, detail) => {
 check("captures were ingested", captures > 0, `${captures} in map`);
 check(`capture map bounded after ${SIMULATED_VIDEOS} videos`, captures <= 20, `${captures} entries (cap 20)`);
 check("newest capture survives pruning", dbg.capturedVideos.includes(`vid${String(SIMULATED_VIDEOS - 1).padStart(8, "0")}`), "");
+
+const newestId = `vid${String(SIMULATED_VIDEOS - 1).padStart(8, "0")}`;
+fakeNow += 30 * 60 * 1000;
+await getDebug({ type: "armCapture" }, {});
+const aged = await getDebug({ type: "getCaptured", videoId: newestId }, {});
+check("capture survives a 30 min watch (no time-based eviction)", !!aged?.capture?.text, aged?.capture ? `kind=${aged.capture.kind}` : "evicted");
 
 console.log(failures ? "\n❌ collection bounds violated" : "\n✅ background collections stay bounded");
 process.exit(failures ? 1 : 0);
