@@ -24,10 +24,33 @@ TG_NOTIFY="$HOME/repos/clawd-agents/reynold/scripts/tg-notify.sh"
 
 QUICK=0
 ANDROID=1
+TEST_NOTIFY=0
 for arg in "$@"; do
   [ "$arg" = "--quick" ] && QUICK=1
   [ "$arg" = "--no-android" ] && ANDROID=0
+  [ "$arg" = "--test-notify" ] && TEST_NOTIFY=1
 done
+
+notify() {
+  sent=""
+  if [ -n "${YAPSUM_NOTIFY:-}" ]; then
+    "$YAPSUM_NOTIFY" "$1" >/dev/null 2>&1 && sent="$sent YAPSUM_NOTIFY"
+  fi
+  if [ -x "$TG_NOTIFY" ]; then
+    "$TG_NOTIFY" "$1" >/dev/null 2>&1 && sent="$sent telegram"
+  fi
+  osascript -e "display notification \"yap-sum weekly check\" with title \"yap-sum\" subtitle \"$(echo "$1" | head -1 | tr '"' ' ')\"" >/dev/null 2>&1 &&
+    sent="$sent macos"
+  [ -n "$sent" ] || sent=" none (log only)"
+  echo "notified via:$sent"
+}
+
+if [ "$TEST_NOTIFY" = "1" ]; then
+  echo "telegram helper: $TG_NOTIFY"
+  [ -x "$TG_NOTIFY" ] && echo "  present and executable" || echo "  NOT FOUND, telegram will be skipped"
+  notify "🐤 yap-sum weekly check: test ping from $(hostname -s). If you can read this, a real canary failure will reach you the same way."
+  exit 0
+fi
 
 contract_fail=""
 infra_warn=""
@@ -86,10 +109,10 @@ fi
   echo "log: $LOG"
 } > "$SUMMARY"
 
-if [ "$EXIT" = "1" ] && [ -x "$TG_NOTIFY" ]; then
-  "$TG_NOTIFY" "🐤 yap-sum weekly canary FAILED ->$contract_fail
+if [ "$EXIT" = "1" ]; then
+  notify "🐤 yap-sum weekly canary FAILED ->$contract_fail
 YouTube probably changed a surface the extension depends on.
-log: $LOG" >/dev/null 2>&1 || true
+log: $LOG" | tee -a "$LOG"
 fi
 
 ls -t "$LOG_DIR"/weekly-*.log 2>/dev/null | tail -n +13 | xargs rm -f 2>/dev/null

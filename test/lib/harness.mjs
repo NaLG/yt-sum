@@ -149,6 +149,7 @@ function buildContent({ port, extra }) {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ kind, t: Date.now(), from: "content", ...(data || {}) }),
     }).catch(() => {});
+  globalThis.ev("harness-content-ready", { href: location.href.slice(0, 120) });
   let __seen = 0;
   browser.runtime.onMessage.addListener((msg) => {
     if (!msg || !msg.__harnessCmd || msg.id === __seen) return;

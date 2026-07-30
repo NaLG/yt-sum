@@ -51,7 +51,98 @@ function checkGestureOrder(path, program) {
   }
 }
 
-const jsFiles = [...globSync("src/**/*.js"), ...globSync("test/*.mjs"), ...globSync("scripts/*.mjs")];
+function checkCaptionKickVerified(path, program) {
+  const fns = {};
+  const collect = (n) => {
+    if (!n || typeof n.type !== "string") return;
+    if (n.type === "FunctionDeclaration" && n.id?.name) fns[n.id.name] = n;
+    for (const key of Object.keys(n)) {
+      if (key === "loc" || key === "range") continue;
+      const v = n[key];
+      if (Array.isArray(v)) v.forEach(collect);
+      else if (v && typeof v.type === "string") collect(v);
+    }
+  };
+  collect(program);
+
+  const togglers = Object.keys(fns).filter((name) => {
+    let calls = false;
+    const walk = (n) => {
+      if (!n || typeof n.type !== "string") return;
+      if (n.type === "CallExpression") {
+        const callee = n.callee;
+        if (callee?.property?.name === "toggleSubtitles") calls = true;
+        if (callee?.name === "toggleMobileCaptions") calls = true;
+      }
+      for (const key of Object.keys(n)) {
+        if (key === "loc" || key === "range") continue;
+        const v = n[key];
+        if (Array.isArray(v)) v.forEach(walk);
+        else if (v && typeof v.type === "string") walk(v);
+      }
+    };
+    walk(fns[name].body);
+    return calls;
+  });
+  if (!togglers.length) return;
+
+  const verifiers = togglers.filter((name) => {
+    let readsState = false;
+    const walk = (n) => {
+      if (!n || typeof n.type !== "string") return;
+      if (n.type === "CallExpression") {
+        const callee = n.callee;
+        if (callee?.name === "mobileCaptionsOn" || callee?.property?.name === "isSubtitlesOn") readsState = true;
+      }
+      for (const key of Object.keys(n)) {
+        if (key === "loc" || key === "range") continue;
+        const v = n[key];
+        if (Array.isArray(v)) v.forEach(walk);
+        else if (v && typeof v.type === "string") walk(v);
+      }
+    };
+    walk(fns[name].body);
+    return readsState;
+  });
+
+  if (!verifiers.length) {
+    fail(
+      `${path}: a function toggles captions (${togglers.join(", ")}) but none re-reads caption state afterwards. ` +
+        "toggleSubtitles() silently no-ops before YouTube's captions module loads, so a fire-and-forget toggle " +
+        "is indistinguishable from success (this shipped as the 0.5.6 caption kick)"
+    );
+    return;
+  }
+
+  const gated = verifiers.some((name) => {
+    let ready = false;
+    const walk = (n) => {
+      if (!n || typeof n.type !== "string") return;
+      if (n.type === "CallExpression" && n.callee?.name === "mobileCaptionsReady") ready = true;
+      for (const key of Object.keys(n)) {
+        if (key === "loc" || key === "range") continue;
+        const v = n[key];
+        if (Array.isArray(v)) v.forEach(walk);
+        else if (v && typeof v.type === "string") walk(v);
+      }
+    };
+    walk(fns[name].body);
+    return ready;
+  });
+  if (!gated) {
+    fail(
+      `${path}: the caption toggle is verified but never gated on mobileCaptionsReady(); ` +
+        "toggling before the captions module loads burns the attempt silently"
+    );
+  }
+}
+
+const rootArg = process.argv.indexOf("--root");
+const ROOT = rootArg === -1 ? "." : process.argv[rootArg + 1].replace(/\/$/, "");
+const scoped = (p) => globSync(`${ROOT}/${p}`);
+const jsFiles = rootArg === -1
+  ? [...scoped("src/**/*.js"), ...scoped("test/*.mjs"), ...scoped("scripts/*.mjs")]
+  : scoped("src/**/*.js");
 for (const path of jsFiles) {
   let src = readFileSync(path, "utf8");
   if (src.includes("\u2014")) fail(`${path}: contains an em-dash`);
@@ -61,7 +152,7 @@ for (const path of jsFiles) {
   try {
     const program = espree.parse(src, { ecmaVersion: "latest", sourceType, comment: true, loc: true, range: true });
     comments = program.comments;
-    if (path.endsWith("src/content/content.js") || path === "src/content/content.js") checkGestureOrder(path, program);
+    if (path.endsWith("src/content/content.js") || path === "src/content/content.js") { checkGestureOrder(path, program); checkCaptionKickVerified(path, program); }
   } catch (e) {
     fail(`${path}: parse error (${e.message})`);
     continue;
@@ -73,7 +164,7 @@ for (const path of jsFiles) {
     fail(`${path}: ${commentLines.size} comment lines exceed the budget of ${COMMENT_LINE_BUDGET}; make the code self-defining; rationale goes in docs/ARCHITECTURE.md`);
 }
 
-for (const path of globSync("src/**/*.css")) {
+for (const path of scoped("src/**/*.css")) {
   const src = readFileSync(path, "utf8");
   if (src.includes("\u2014")) fail(`${path}: contains an em-dash`);
   const count = (src.match(/\/\*/g) || []).length;

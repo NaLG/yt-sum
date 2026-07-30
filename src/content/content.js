@@ -36,9 +36,11 @@
           })
       );
     } catch (e) {
+      let bundle = null;
+      try { bundle = await buildDebugBundle(String(e)); } catch (x) { bundle = { bundleError: String(x) }; }
       console.log(
         "YAPSUM_SELFTEST " +
-          JSON.stringify({ ok: false, error: String(e), errors: e.errors, wallMs: Date.now() - started })
+          JSON.stringify({ ok: false, error: String(e), errors: e.errors, wallMs: Date.now() - started, bundle })
       );
     }
   }
@@ -194,6 +196,7 @@
   const captureFor = async (videoId) => {
     const cap = (await browser.runtime.sendMessage({ type: "getCaptured", videoId }))?.capture;
     if (!cap) return null;
+    lastCaptureInfo = { kind: cap.kind, keyed: cap.keyed, captureVideoId: cap.videoId, wantedVideoId: videoId };
     if (cap.keyed === false && videoId !== NS.currentVideoId()) return null;
     if (cap.videoId && videoId && cap.videoId !== videoId) {
       clog("capture rejected: wrong video", { want: videoId, got: cap.videoId });
@@ -246,6 +249,17 @@
           if (ccKick && !ccKick.enabled) {
             const on = ensureMobileCaptionsOn(ccKick);
             clog("mobile cc ensure", { on, attempts: ccKick.attempts, ready: mobileCaptionsReady(ccKick.api) });
+            lastCcKick = {
+              via: ccKick.api ? "api" : "button",
+              wasOn: ccKick.wasOn,
+              attempts: ccKick.attempts,
+              toggles: ccKick.toggles,
+              enabled: ccKick.enabled,
+              turnedOn: !!ccKick.turnedOn,
+              alreadyOn: !!ccKick.alreadyOn,
+              moduleReadyAtKick: mobileCaptionsReady(ccKick.api),
+              atIteration: i,
+            };
           } else if (ccKick && ccKick.alreadyOn && !refetched && i >= 40) {
             refetched = true;
             clog("mobile cc refetch (captions already on, no capture)");
@@ -351,6 +365,10 @@
         defaultModel: pickerModels?.defaultModel ?? null,
         extraCount: pickerModels?.extra?.length ?? null,
       },
+      captions: captionDiagnostics(),
+      playback: playbackDiagnostics(),
+      anchors: anchorDiagnostics(),
+      capture: lastCaptureInfo,
       pageFacts: {
         summarizeBtnParent: document.getElementById("yapsum-btn")?.parentElement?.tagName?.toLowerCase() || null,
         summarizeBtnPrevSibling: document.getElementById("yapsum-btn")?.previousElementSibling?.tagName?.toLowerCase() || null,
@@ -380,6 +398,59 @@
     };
   }
 
+  let lastCcKick = null;
+  let lastCaptureInfo = null;
+  let playbackWatch = null;
+  NS.buildDebugBundle = (msg) => buildDebugBundle(msg || "(probe)");
+
+  function captionDiagnostics() {
+    const api = mobileCaptionApi();
+    const btn = findMobileCcButton();
+    const safe = (fn, d) => { try { return fn(); } catch { return d; } };
+    return {
+      hasPlayer: !!document.querySelector("#movie_player"),
+      hasToggleSubtitles: !!api,
+      hasIsSubtitlesOn: !!(api && typeof api.isSubtitlesOn === "function"),
+      isSubtitlesOn: api ? safe(() => api.isSubtitlesOn(), "threw") : null,
+      tracklistLen: api ? safe(() => (api.getOption("captions", "tracklist") || []).length, "threw") : null,
+      moduleReady: safe(() => mobileCaptionsReady(api), "threw"),
+      ccButtonFound: !!btn,
+      ccPressed: btn ? btn.getAttribute("aria-pressed") : null,
+      kick: lastCcKick,
+    };
+  }
+
+  function playbackDiagnostics() {
+    const v = document.querySelector("video");
+    if (!v) return { videoElement: false };
+    return {
+      videoElement: true,
+      paused: v.paused,
+      muted: v.muted,
+      currentTime: Math.round(v.currentTime * 10) / 10,
+      readyState: v.readyState,
+      advanced: playbackWatch ? Math.round((v.currentTime - playbackWatch.startedAt) * 10) / 10 : null,
+      nudged: !!playbackWatch,
+    };
+  }
+
+  function anchorDiagnostics() {
+    const probes = {
+      desktopLikeViewModel: "ytd-watch-metadata segmented-like-dislike-button-view-model",
+      desktopLikeLegacy: "ytd-watch-metadata ytd-segmented-like-dislike-button-renderer",
+      mwebLikeViewModel: "ytm-slim-video-action-bar-renderer like-button-view-model",
+      mwebLikeLegacy: "ytm-slim-video-action-bar-renderer ytm-like-button-renderer",
+      mwebActionBar: "ytm-slim-video-action-bar-renderer",
+      desktopActions: "ytd-watch-metadata #actions #top-level-buttons-computed",
+    };
+    const matched = [];
+    const missing = [];
+    for (const [name, sel] of Object.entries(probes)) {
+      (document.querySelector(sel) ? matched : missing).push(name);
+    }
+    return { matched, missing };
+  }
+
   let mobilePlayback = null;
   function kickMobilePlayback() {
     if (location.hostname !== "m.youtube.com") return;
@@ -387,6 +458,7 @@
     if (!v) return;
     if (mobilePlayback && mobilePlayback.v === v) return;
     mobilePlayback = { v, wasPaused: v.paused, pos: v.currentTime, muted: v.muted };
+    playbackWatch = { startedAt: v.currentTime };
     if (v.paused) {
       try { v.muted = true; const p = v.play(); if (p && p.catch) p.catch(() => {}); } catch {}
     }

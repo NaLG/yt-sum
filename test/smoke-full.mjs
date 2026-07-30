@@ -416,6 +416,20 @@ writeFileSync(
            re: [re.left, re.top, re.width, re.height].map(Math.round) });
        } catch (e) { inplaceErr = String(e); }
 
+       let bundleKeys = null, bundleShape = null;
+       try {
+         const b = await globalThis.yapSum.buildDebugBundle("smoke probe");
+         bundleKeys = Object.keys(b).sort();
+         bundleShape = {
+           captions: b.captions ? Object.keys(b.captions).sort() : null,
+           playback: b.playback ? Object.keys(b.playback).sort() : null,
+           anchorsMatched: b.anchors ? b.anchors.matched.length : null,
+           anchorsMissing: b.anchors ? b.anchors.missing.length : null,
+           hasVersion: !!b.version,
+           leaksKey: JSON.stringify(b).toLowerCase().includes("test-key"),
+         };
+       } catch (e) { bundleKeys = ["threw: " + String(e)]; }
+
        let bgLog = null;
        try {
          const dbg = await browser.runtime.sendMessage({ type: "getDebug" });
@@ -430,6 +444,7 @@ writeFileSync(
          inplaceOk, inplaceErr,
          pickerSoloOk, modelSwitchOk, pickerOk, pickerFollowupOk, pickerCacheOk, modelErr, pickerVisible, pickerDefaultOk, pickerGeom,
          waitOk, waitCachedFlipOk, waitAskOk, waitRunOk, waitErr,
+         bundleKeys, bundleShape,
          ok: text.includes("SUMMARY_OK"),
          method: document.documentElement.dataset.yapsumMethod || "(unknown)",
          scrapeRows,
@@ -488,6 +503,8 @@ console.log(
   "(screenshots: test/artifacts/model-picker-default.png, model-picker.png)"
 );
 console.log("panel showed:", JSON.stringify(report.panelText || report.error));
+console.log("debug bundle keys:", JSON.stringify(report.bundleKeys));
+console.log("debug bundle shape:", JSON.stringify(report.bundleShape));
 if (!report.ok && report.bgLog) console.log("bg capture log:", JSON.stringify(report.bgLog, null, 1));
 const partChars = llm.parts.reduce((a, p) => a + p.chars, 0);
 const model2Calls = llm.requests.filter((r) => r.model === "mock-model-2" && r.kind !== "notes").length;
@@ -500,6 +517,10 @@ console.log("auto-off spend audit, model-3 summaries/followups (want 1/1):", mod
 const pass =
   report.ok &&
   (report.method === "intercept" || report.method === "captions-intercept") &&
+  Array.isArray(report.bundleKeys) &&
+  ["anchors", "capture", "captions", "playback", "pageFacts", "background", "content", "version"].every((k) => report.bundleKeys.includes(k)) &&
+  report.bundleShape?.leaksKey === false &&
+  report.bundleShape?.anchorsMatched >= 1 &&
   report.renderedHeading === true &&
   report.renderedList === true &&
   report.renderedStrong === true &&

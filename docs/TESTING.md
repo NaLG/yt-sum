@@ -178,6 +178,29 @@ test/
 3. If it is a regression, add a matrix cell with `knownBadRef` and prove it has
    teeth with `--ref <bad> --expect-fail`.
 
+## The failure bundle
+
+When extraction fails, the panel offers Copy debug. That bundle is the only
+thing a field report gives us, so it carries what the last three failures
+actually turned on, not just page structure:
+
+- `captions`: does the player expose `toggleSubtitles`/`isSubtitlesOn`, what
+  does `isSubtitlesOn()` say, is the captions `tracklist` readable yet, was the
+  CC button in the DOM, and a `kick` record (which mechanism, prior state, how
+  many attempts, whether it actually enabled, whether the module was ready).
+  This is what turns "couldn't get a transcript" into "the toggle no-oped
+  because the captions module had not loaded" without a repro session.
+- `playback`: paused, muted, currentTime, readyState, and `advanced`, how far
+  the video moved since the nudge. `paused` alone lies, because `play()` clears
+  it synchronously even when autoplay then rejects.
+- `anchors`: which registered button anchors matched and which did not, so a
+  YouTube rename shows up as a named missing anchor instead of a mystery.
+- `capture`: whether the capture was keyed to this video or came from the
+  un-keyed fallback, and which video id it belonged to.
+
+`smoke-full.mjs` asserts the bundle's shape in the gate and asserts it does NOT
+contain the API key, since the user pastes it into a bug report.
+
 ## Status, 2026-07-30
 
 Verified working:
@@ -189,6 +212,17 @@ Verified working:
   button had silently fallen back to a lower-priority anchor. Fixed in
   content.js and re-registered in the contract.
 - `smoke-full.mjs` now requires the production intercept path.
+
+The static invariants have been proven against the commits that had the bugs:
+
+```
+node test/lint-style.mjs --root <dir-with-src>
+```
+
+- `751bf17` (0.5.6 as first shipped) FAILS the caption-kick invariant: it
+  toggled captions once and never re-read the state, which is exactly the bug
+  found later that day. HEAD passes.
+- `dc9d6f4` (0.5.4) FAILS the gesture-order invariant.
 
 Not yet verified end to end:
 
