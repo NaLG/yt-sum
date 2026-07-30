@@ -250,6 +250,40 @@ transmitted to the developer; there is no backend.
 >   first await (this ordering bug shipped twice before).
 > - Manifest change: version only.
 
+## 0.5.6 version submission (2026-07-30)
+
+**Release notes (paste into the version's "Release notes" field):**
+
+> Android reliability fix. No permission changes.
+>
+> - Fixed: on Android, videos watched with captions turned off failed with
+>   "Couldn't get a transcript" even after playing for a while. The mobile
+>   player only loads caption data while captions are displayed, so the
+>   extension now turns captions on briefly during transcript capture and
+>   restores your captions setting right after.
+> - The failure hint now suggests playing with captions (CC) on as the
+>   manual workaround.
+
+**Reviewer notes delta (append to the standing notes):**
+
+> Changes in 0.5.6 vs 0.5.5 are one mobile-capture fix in the content
+> script; no new permissions, hosts, or APIs. Full diff:
+> https://github.com/NaLG/yt-sum/compare/8dd1f0d...FILL_AFTER_COMMIT
+>
+> - src/content/content.js: the m.youtube.com player requests
+>   /api/timedtext only while caption display is active, so a user playing
+>   with captions off produces nothing to intercept (field-reported,
+>   emulator-reproduced). While waiting for the playback-triggered capture,
+>   the content script now enables captions after ~5s: it calls the
+>   YouTube player element's own toggleSubtitles() API (via wrappedJSObject,
+>   the standard way for a Firefox content script to call a page-defined
+>   function), falling back to an untrusted click on YouTube's CC button.
+>   The user's caption state is read from the button's aria-pressed /
+>   isSubtitlesOn() and restored when the wait loop ends. The debug bundle
+>   (shown only on failure, copied only by explicit user action) now also
+>   lists the player's CC controls to diagnose future YouTube UI variants.
+> - Manifest change: version only.
+
 ## Screenshots to attach
 
 - Desktop: the Summarize button left of the like control + a rendered summary panel.

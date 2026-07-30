@@ -223,10 +223,23 @@
 
     if (!cap && location.hostname === "m.youtube.com" && mobilePlayback) {
       clog("mobile: awaiting playback-triggered capture", { playing: !mobilePlayback.v.paused });
+      let ccKick = null;
       for (let i = 0; i < 115 && !cap; i++) {
         await sleep(300);
         cap = await captureFor(videoId).catch(() => null);
+        if (!cap && !ccKick && i >= 15 && (i - 15) % 10 === 0) {
+          ccKick = kickMobileCaptions();
+          if (ccKick) clog("mobile cc kick", { via: ccKick.api ? "api" : "button", wasOn: ccKick.wasOn });
+          else if (i === 15) clog("mobile cc kick: no cc control yet");
+        }
+        if (!cap && ccKick && ccKick.toggles === 1 && ccKick.wasOn === true && i >= 25) {
+          if (toggleMobileCaptions(ccKick)) {
+            ccKick.toggles = 2;
+            clog("mobile cc re-toggle");
+          }
+        }
       }
+      restoreMobileCaptions(ccKick);
       if (cap) {
         const segs = parseCapture(cap);
         clog("mobile playback capture", { kind: cap.kind, segs: segs ? segs.length : 0 });
@@ -331,6 +344,16 @@
         genericScrapeRows: scrapeCount,
         transcriptPanelFound: !!NS.transcriptPanelInfo?.(),
         transcriptPanelInfo: NS.transcriptPanelInfo?.() || null,
+        moviePlayer: !!document.querySelector("#movie_player"),
+        ccControls: Array.from(document.querySelectorAll(`${MOBILE_CC_SEL}, .ytp-subtitles-button`))
+          .slice(0, 4)
+          .map((el) => ({
+            tag: el.tagName.toLowerCase(),
+            cls: String(el.className).slice(0, 60),
+            label: (el.getAttribute("aria-label") || "").slice(0, 50),
+            pressed: el.getAttribute("aria-pressed"),
+            visible: !!el.offsetParent,
+          })),
         segNodes: q("ytd-transcript-segment-renderer"),
         engagementPanels: q("ytd-engagement-panel-section-list-renderer"),
         engagementPanelTargets: Array.from(document.querySelectorAll("ytd-engagement-panel-section-list-renderer"), (p) => p.getAttribute("target-id")).filter(Boolean),
@@ -360,6 +383,58 @@
       if (m.wasPaused) { m.v.pause(); m.v.currentTime = m.pos; }
       m.v.muted = m.muted;
     } catch {}
+  }
+
+  const MOBILE_CC_SEL = [
+    ".ytmClosedCaptioningButtonButton",
+    'button[class*="losedCaption"]',
+    '[class*="losedCaption"] button',
+    'button[aria-label*="caption" i]',
+    '[role=button][aria-label*="caption" i]',
+    'button[aria-label*="subtitle" i]',
+    '[role=button][aria-label*="subtitle" i]',
+  ].join(", ");
+  function findMobileCcButton() {
+    for (const el of document.querySelectorAll(MOBILE_CC_SEL)) {
+      if (!el.closest("#yapsum-panel")) return el;
+    }
+    return null;
+  }
+  function mobileCaptionApi() {
+    const mp = document.querySelector("#movie_player");
+    const api = mp && (mp.wrappedJSObject || mp);
+    return api && typeof api.toggleSubtitles === "function" ? api : null;
+  }
+  function mobileCaptionsOn(api) {
+    try {
+      if (api && typeof api.isSubtitlesOn === "function") return !!api.isSubtitlesOn();
+    } catch {}
+    const btn = findMobileCcButton();
+    return btn ? btn.getAttribute("aria-pressed") === "true" : null;
+  }
+  function toggleMobileCaptions(kick) {
+    try {
+      if (kick.api) kick.api.toggleSubtitles();
+      else findMobileCcButton()?.click();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  function kickMobileCaptions() {
+    const api = mobileCaptionApi();
+    if (!api && !findMobileCcButton()) return null;
+    const kick = { api, wasOn: mobileCaptionsOn(api), toggles: 0 };
+    if (!toggleMobileCaptions(kick)) return null;
+    kick.toggles = 1;
+    return kick;
+  }
+  function restoreMobileCaptions(kick) {
+    if (!kick || !kick.toggles) return;
+    const on = mobileCaptionsOn(kick.api);
+    if (on === null ? kick.toggles % 2 === 1 : kick.wasOn !== null && on !== kick.wasOn) {
+      toggleMobileCaptions(kick);
+    }
   }
 
   const SUMMARY_TTL_MS = 30 * 60 * 1000;
@@ -505,7 +580,7 @@
       const hint = isShortsPage()
         ? "\n\nLet the short play for a few seconds, then try again. Note that many Shorts have no captions at all; those can't be summarized."
         : location.hostname === "m.youtube.com"
-          ? "\n\nTry playing the video for a few seconds, then tap Summarize again. If that still fails, tap the ⋮ menu, choose \"Desktop site\", and retry. Videos with no captions at all can't be summarized."
+          ? "\n\nTry playing the video with captions (CC) turned on for a few seconds, then tap Summarize again. If that still fails, tap the ⋮ menu, choose \"Desktop site\", and retry. Videos with no captions at all can't be summarized."
           : "";
       await showError(panel, `Couldn't get a transcript for this video.${hint}\n\n${e.message}`);
       setPickerDisabled(panel, false);

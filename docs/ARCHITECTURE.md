@@ -31,12 +31,28 @@ them through to the player. Captures land in `capturedByVideo`, keyed by
 video id and bounded to 20 entries, evicted oldest-first (the page is
 persistent, and without the cap a long captions-on session accumulates one
 transcript per video watched, forever). There is deliberately NO time-based
-eviction: the mweb player fetches captions exactly once per playback and has
-no re-trigger surface (the CC toggle is desktop-only), so an age cutoff turns
-any watch longer than the cutoff into a guaranteed mobile extraction failure.
-That shipped as a 10 minute TTL through 0.5.4, was field-reported on Android
-and emulator-verified, and was removed in 0.5.5; transcripts do not change,
-so staleness is not a risk. `timedtext` captures never set the
+eviction: the mweb player fetches captions at most once per playback, so an
+age cutoff turns any watch longer than the cutoff into a guaranteed mobile
+extraction failure. That shipped as a 10 minute TTL through 0.5.4, was
+field-reported on Android and emulator-verified, and was removed in 0.5.5;
+transcripts do not change, so staleness is not a risk.
+
+The mweb player requests `timedtext` ONLY while caption display is active:
+sticky captions on, or the auto-captions it enables for muted playback. A
+user who plays normally, sound on and captions off, produces zero caption
+traffic, so there is nothing to intercept and every fallback fails
+(field-reported against 0.5.5; reproduced on the emulator by turning sticky
+captions off and starting playback with a real tap). The content script
+therefore force-enables captions when the mobile wait loop is still empty
+after ~5s: `#movie_player`'s `toggleSubtitles()` player API via
+`wrappedJSObject` (present on the current player and callable before the
+control overlay has ever rendered), falling back to clicking the CC button
+(`.ytmClosedCaptioningButtonButton`), which only exists in the DOM after the
+player controls have materialized. If captions were already on yet no capture
+exists (background restarted after the fetch), a second toggle forces a
+refetch. Original caption state is restored after the loop either way. The
+kick never dispatches synthetic clicks at the player surface itself: those
+toggle play/pause. `timedtext` captures never set the
 un-keyed `lastCapture` fallback: related-video previews fetch OTHER videos'
 captions and would poison it. The content script requests captures via
 runtime messages and can force a caption fetch by toggling CC or nudging

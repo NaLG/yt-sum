@@ -16,7 +16,55 @@ LLM API key. No backend, no tracking.
   return-youtube-summary@nalg.dev, CSS .yapsum-* classes, storage keys, local
   dir / npm name yap-sum.
 
-## CURRENT STATE (2026-07-28): 0.5.5 built and gate-green, ready to submit
+## CURRENT STATE (2026-07-30): 0.5.6 fixes the captions-off Android failure
+
+The user field-reported 0.5.5 failing on their phone (debug bundle: 0.5.5,
+m.youtube.com, video WITH an English asr track, all methods failed, zero
+player caption traffic in 84s of background log). Root cause, fully
+reproduced on the emulator: the mweb player fetches `timedtext` ONLY while
+caption display is active. Sticky captions on, or the auto-captions YouTube
+turns on for MUTED playback, both fetch; a user playing normally with sound
+on and captions off produces no caption traffic at all, so there is nothing
+to intercept and every fallback fails. All prior emulator passes had sticky
+captions ON in the profile (and the muted playback nudge triggers
+auto-captions), which is why "played then summarized" always worked there
+and on 95 percent of the user's real watches; their phone has captions off.
+Repro recipe that finally matched the phone: turn sticky captions off (real
+tap on `.ytmClosedCaptioningButtonButton` while playing), fresh video, real
+unmuted tap playback, then summarize: exact user error on pristine 0.5.5.
+
+0.5.6 fix (content.js): when the mobile wait loop has no capture after ~5s,
+force-enable captions: `#movie_player` `toggleSubtitles()` via
+`wrappedJSObject` (callable before the control overlay ever renders), else
+click the CC button (exists in DOM only after controls first render). If
+captions were already on but no capture exists (background restart), a
+second toggle at ~8s forces a refetch. Caption state is restored after the
+loop. Debug bundle now reports `moviePlayer` + `ccControls`
+(tag/cls/label/pressed/visible) so the next variant shift is visible from
+the field. Mobile failure hint now says "with captions (CC) turned on".
+Desktop gate 9/9 green. Emulator: pristine 0.5.5 FAILS the repro recipe,
+0.5.6 must PASS it (validation run in flight when this was written; see
+scratchpad probe-cc-repro.mjs pattern, recoverable from session
+transcripts).
+
+Emulator lesson refinements this session: the 07-28 note "muted play() does
+not trigger the timedtext fetch" was WRONG in general; muted playback
+triggers YouTube auto-captions which DO fetch. The gate is caption display,
+not how playback started. Synthetic (untrusted) clicks on the video element
+toggle play/pause (they PAUSE a playing video); untrusted clicks on the CC
+button work fine. The CC button reads state via aria-pressed and its sticky
+pref persists across browser restarts in the profile. Probes must gate their
+cmd polling on document.visibilityState: Fenix restores stale tabs and a
+background tab with the same video id will otherwise answer the command
+channel. The emulator notifications permission dialog eats real taps;
+dismiss it once with a real tap on Don't allow (persists).
+
+0.5.5 reached the user's phone (their bundle reports 0.5.5), so it was
+submitted and approved between sessions. AMO submission for 0.5.6 remains
+with the user (creds not on this machine), plus the standing Hub queue
+(icon, screenshots, privacy re-paste, store-install verification).
+
+## PRIOR STATE (2026-07-28): 0.5.5 built and gate-green, ready to submit
 
 0.5.5 fixes both Android findings from the triage below: pruneCaptures no
 longer evicts by age (20-entry cap only), onSummarizeClick kicks the mobile

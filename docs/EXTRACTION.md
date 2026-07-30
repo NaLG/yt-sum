@@ -38,11 +38,19 @@ To make the player actually fire those requests:
 
 - **Desktop:** the content script nudges the transcript panel / captions into
   loading.
-- **Mobile (`m.youtube.com`):** the mobile player only fetches the transcript
-  once playback begins, so on tap the extension starts playback muted
-  **synchronously within the click gesture** (a later `play()` is rejected by
-  autoplay policy once anything has been awaited), captures the transcript,
-  then pauses and rewinds the video. Desktop is unaffected (hostname gated).
+- **Mobile (`m.youtube.com`):** the mobile player fetches the caption track
+  only while playback runs WITH caption display active: sticky captions on,
+  or the auto-captions YouTube enables for muted playback. On tap the
+  extension starts playback muted **synchronously within the click gesture**
+  (a later `play()` is rejected by autoplay policy once anything has been
+  awaited), and if no capture arrives within ~5s it force-enables captions:
+  the `#movie_player` element's `toggleSubtitles()` API via `wrappedJSObject`,
+  with an untrusted click on `.ytmClosedCaptioningButtonButton` as fallback
+  (that button enters the DOM only after the player controls first render).
+  Caption state and playback position are restored afterwards. A user playing
+  normally, sound on and captions off, otherwise produces ZERO caption
+  traffic: nothing to intercept, guaranteed failure (the 0.5.5 field report).
+  Desktop is unaffected (hostname gated).
 
 ## Fallback chain
 
