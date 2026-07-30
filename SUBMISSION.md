@@ -268,7 +268,7 @@ transmitted to the developer; there is no backend.
 
 > Changes in 0.5.6 vs 0.5.5 are one mobile-capture fix in the content
 > script; no new permissions, hosts, or APIs. Full diff:
-> https://github.com/NaLG/yt-sum/compare/8dd1f0d...FILL_AFTER_COMMIT
+> https://github.com/NaLG/yt-sum/compare/8dd1f0d...751bf17
 >
 > - src/content/content.js: the m.youtube.com player requests
 >   /api/timedtext only while caption display is active, so a user playing
