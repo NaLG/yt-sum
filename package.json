@@ -20,9 +20,17 @@
     "test:options": "node test/smoke-options.mjs",
     "test:full": "node test/smoke-full.mjs",
     "test:extract": "node test/webext-validate.mjs",
-    "test:android": "node test/webext-validate.mjs --target firefox-android"
+    "test:android": "node test/webext-validate.mjs --target firefox-android",
+    "canary": "node test/canary-desktop.mjs && node test/canary-mweb.mjs",
+    "canary:desktop": "node test/canary-desktop.mjs",
+    "canary:mweb": "node test/canary-mweb.mjs",
+    "matrix": "node test/matrix-mweb.mjs",
+    "weekly": "sh scripts/weekly-check.sh",
+    "weekly:install": "sh scripts/weekly-install.sh",
+    "weekly:uninstall": "sh scripts/weekly-install.sh --uninstall"
   },
   "devDependencies": {
+    "espree": "^10.0.0",
     "web-ext": "^8.0.0"
   }
 }

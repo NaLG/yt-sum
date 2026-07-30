@@ -149,16 +149,9 @@ writeFileSync(
        for (let i = 0; i < 40 && !btn; i++) { await sleep(500); btn = document.getElementById("yapsum-btn"); }
        if (!btn) { browser.runtime.sendMessage({ __smoke: true, ok: false, error: "no Summarize button" }); return; }
 
-       // Open the transcript up front (as a user reading it would), then verify
-       // the generic scraper reads the FULL transcript (wait for it to settle).
-       try { await globalThis.yapSum.openTranscriptPanel(); } catch (e) {}
-       let scrapeRows = 0, prev = -1;
-       for (let i = 0; i < 40 && scrapeRows !== prev; i++) {
-         prev = scrapeRows;
-         await sleep(400);
-         scrapeRows = (globalThis.yapSum.scrapeVisibleTranscript() || []).length;
-       }
-
+       // The panel stays CLOSED here on purpose: pre-opening it let the DOM
+       // scraper answer first, so this suite passed with network capture dead.
+       let scrapeRows = 0;
        await sleep(300);
        btn.click();
        let text = "", prevText = "", stable = 0;
@@ -506,7 +499,7 @@ console.log("mock-model-2 summarize calls (want 1):", model2Calls, "| kimi reqs:
 console.log("auto-off spend audit, model-3 summaries/followups (want 1/1):", model3Sums, "/", model3Fups);
 const pass =
   report.ok &&
-  (report.method === "intercept" || report.method === "captions-intercept" || report.method === "scrape") &&
+  (report.method === "intercept" || report.method === "captions-intercept") &&
   report.renderedHeading === true &&
   report.renderedList === true &&
   report.renderedStrong === true &&

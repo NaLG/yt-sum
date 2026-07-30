@@ -8,6 +8,7 @@ const ROOT = new URL("..", import.meta.url).pathname;
 const SUITES = [
   { name: "lint", cmd: "web-ext", args: ["lint", "--source-dir", "src"], timeout: 120 },
   { name: "style (comment budget, no em-dashes)", cmd: "node", args: ["test/lint-style.mjs"], timeout: 30 },
+  { name: "contract (YouTube surfaces registered)", cmd: "node", args: ["test/lint-contract.mjs"], timeout: 30 },
   { name: "leak bounds (background collections)", cmd: "node", args: ["test/leak-bounds.mjs"], timeout: 30 },
   { name: "options (geckodriver)", cmd: "node", args: ["test/smoke-options.mjs"], timeout: 180 },
   { name: "placement + styles", cmd: "node", args: ["test/smoke-placement.mjs"], timeout: 180 },

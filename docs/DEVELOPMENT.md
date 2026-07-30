@@ -16,6 +16,18 @@ npm run run:desktop                  # launch in desktop Firefox on a test video
 npm run build                        # -> dist/<name>-<version>.zip
 ```
 
+The gate is deterministic and browser-local. It does NOT tell you whether
+YouTube still behaves the way the extension assumes: that is the canary and
+matrix layer, run weekly. **[docs/TESTING.md](TESTING.md) explains all three
+layers and is required reading before touching extraction.**
+
+```sh
+npm run canary                       # live YouTube surface + behavior contract
+npm run matrix                       # production path across the states that broke us
+npm run weekly                       # everything, with a verdict and a log
+npm run weekly:install               # launchd agent, Sundays 04:15
+```
+
 Individual suites (all deterministic: real assertions, exit codes, no
 human-in-the-loop judgment):
 
@@ -93,9 +105,15 @@ src/
   options/                  settings page + toolbar popup
   icons/                    48/96/128/512 (green "TL;DW" mark)
 test/
-  smoke-full.mjs            authoritative end-to-end test (extract → summary → Q&A)
-  webext-validate.mjs       extraction test (desktop + android)
+  smoke-full.mjs            authoritative end-to-end test (extract → summary → Q&A);
+                            requires the network-intercept path, never a fallback
+  webext-validate.mjs       extractor.js FALLBACK-chain check (not the production path)
+  contract.mjs              registry of every YouTube surface the extension depends on
+  lint-contract.mjs         gate check: no unregistered YouTube dependencies
+  canary-*.mjs              live YouTube surface + behavior checks (weekly)
+  matrix-mweb.mjs           production path across caption/playback/autoplay states
+  lib/                      shared web-ext driver, adb/emulator control, reporting
   probe*.mjs                probes used to characterize YouTube's transcript variants
-docs/                       EXTRACTION.md, DEVELOPMENT.md, screenshots
+docs/                       TESTING.md, EXTRACTION.md, DEVELOPMENT.md, screenshots
 scripts/                    android emulator + device launchers
 ```

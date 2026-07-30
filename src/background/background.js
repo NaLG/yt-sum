@@ -134,8 +134,8 @@ browser.webRequest.onBeforeRequest.addListener(
 
 function getCapturedFor(videoId) {
   const byId = videoId && capturedByVideo.get(videoId);
-  if (byId) return byId;
-  if (lastCapture && Date.now() - lastCapture.at < 20000) return lastCapture;
+  if (byId) return { ...byId, videoId, keyed: true };
+  if (lastCapture && Date.now() - lastCapture.at < 20000) return { ...lastCapture, videoId: lastCapture.videoId || null, keyed: false };
   return null;
 }
 
@@ -456,8 +456,11 @@ browser.runtime.onMessage.addListener((msg, sender) => {
   }
   if (msg?.type === "getCaptured") {
     const cap = getCapturedFor(msg.videoId);
-    dbg("getCaptured", { videoId: msg.videoId, hit: !!cap, kind: cap?.kind });
-    return Promise.resolve({ json: cap?.kind === "get_transcript" ? cap.json : null, capture: cap ? { kind: cap.kind, json: cap.json, text: cap.text } : null });
+    dbg("getCaptured", { videoId: msg.videoId, hit: !!cap, kind: cap?.kind, keyed: cap?.keyed ?? null });
+    return Promise.resolve({
+      json: cap?.kind === "get_transcript" ? cap.json : null,
+      capture: cap ? { kind: cap.kind, json: cap.json, text: cap.text, videoId: cap.videoId ?? null, keyed: !!cap.keyed } : null,
+    });
   }
   if (msg?.type === "getDebug") {
     return Promise.resolve({

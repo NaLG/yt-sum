@@ -263,6 +263,10 @@ transmitted to the developer; there is no backend.
 >   restores your captions setting right after.
 > - The failure hint now suggests playing with captions (CC) on as the
 >   manual workaround.
+> - Fixed: the Summarize button now anchors correctly on the current mobile
+>   YouTube layout, which replaced the old like-button element.
+> - Fixed: a transcript captured for one video can no longer be served for a
+>   different video when you switch videos quickly.
 
 **Reviewer notes delta (append to the standing notes):**
 
@@ -282,7 +286,25 @@ transmitted to the developer; there is no backend.
 >   isSubtitlesOn() and restored when the wait loop ends. The debug bundle
 >   (shown only on failure, copied only by explicit user action) now also
 >   lists the player's CC controls to diagnose future YouTube UI variants.
+> - src/content/content.js: the caption enable is verified and retried rather
+>   than fired once. toggleSubtitles() silently does nothing when the player's
+>   captions module has not loaded yet, so the code now waits for a readable
+>   caption tracklist, confirms isSubtitlesOn() actually flipped, and restores
+>   the original state afterwards.
+> - src/content/content.js: added like-button-view-model as the mobile button
+>   anchor. Mobile YouTube replaced ytm-like-button-renderer with it; the
+>   button was landing via a lower-priority fallback.
+> - src/background/background.js and content.js: captures now carry their video
+>   id and the content script rejects one that does not match the page it is
+>   summarizing. Previously an un-keyed 20 second fallback could return the
+>   previous video's transcript after a fast video switch.
 > - Manifest change: version only.
+>
+> Test-only additions in this diff (test/, docs/, scripts/, not shipped in the
+> XPI): a registry of the YouTube surfaces the extension depends on plus
+> canaries that verify them against live YouTube, a mobile state matrix, and a
+> weekly local job that runs them. No network calls to anything but YouTube and
+> a local mock.
 
 ## Screenshots to attach
 

@@ -71,6 +71,9 @@ continues on its own within a second or two.
 ## For developers
 
 Build, test, and release docs live in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+Extraction depends on a set of YouTube behaviors that change without notice;
+[docs/TESTING.md](docs/TESTING.md) describes the contract registry, the live
+canaries, and the weekly job that watches them.
 
 ## License
 

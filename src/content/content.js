@@ -52,6 +52,7 @@
     let likeComponent =
       usable(document.querySelector("ytd-watch-metadata segmented-like-dislike-button-view-model")) ||
       usable(document.querySelector("ytd-watch-metadata ytd-segmented-like-dislike-button-renderer")) ||
+      usable(document.querySelector("ytm-slim-video-action-bar-renderer like-button-view-model")) ||
       usable(document.querySelector("ytm-slim-video-action-bar-renderer ytm-like-button-renderer"));
     if (!likeComponent) {
       for (const c of document.querySelectorAll("like-button-view-model, ytm-like-button-renderer")) {
@@ -190,8 +191,16 @@
     document.documentElement.dataset.yapsumMethod = method;
     return NS.buildResult(videoId, method, segs, { ms: Math.round(performance.now() - started) }, []);
   }
-  const captureFor = async (videoId) =>
-    (await browser.runtime.sendMessage({ type: "getCaptured", videoId }))?.capture;
+  const captureFor = async (videoId) => {
+    const cap = (await browser.runtime.sendMessage({ type: "getCaptured", videoId }))?.capture;
+    if (!cap) return null;
+    if (cap.keyed === false && videoId !== NS.currentVideoId()) return null;
+    if (cap.videoId && videoId && cap.videoId !== videoId) {
+      clog("capture rejected: wrong video", { want: videoId, got: cap.videoId });
+      return null;
+    }
+    return cap;
+  };
   const parseCapture = (cap) =>
     !cap ? null
     : cap.kind === "timedtext" ? NS.parseTimedtextBody(cap.text)
@@ -224,18 +233,25 @@
     if (!cap && location.hostname === "m.youtube.com" && mobilePlayback) {
       clog("mobile: awaiting playback-triggered capture", { playing: !mobilePlayback.v.paused });
       let ccKick = null;
+      let refetched = false;
       for (let i = 0; i < 115 && !cap; i++) {
         await sleep(300);
         cap = await captureFor(videoId).catch(() => null);
-        if (!cap && !ccKick && i >= 15 && (i - 15) % 10 === 0) {
-          ccKick = kickMobileCaptions();
-          if (ccKick) clog("mobile cc kick", { via: ccKick.api ? "api" : "button", wasOn: ccKick.wasOn });
-          else if (i === 15) clog("mobile cc kick: no cc control yet");
-        }
-        if (!cap && ccKick && ccKick.toggles === 1 && ccKick.wasOn === true && i >= 25) {
-          if (toggleMobileCaptions(ccKick)) {
-            ccKick.toggles = 2;
-            clog("mobile cc re-toggle");
+        if (cap || videoId !== NS.currentVideoId()) break;
+        if (i >= 10 && i % 5 === 0) {
+          if (!ccKick) {
+            ccKick = beginMobileCaptions();
+            if (ccKick) clog("mobile cc begin", { via: ccKick.api ? "api" : "button", wasOn: ccKick.wasOn });
+          }
+          if (ccKick && !ccKick.enabled) {
+            const on = ensureMobileCaptionsOn(ccKick);
+            clog("mobile cc ensure", { on, attempts: ccKick.attempts, ready: mobileCaptionsReady(ccKick.api) });
+          } else if (ccKick && ccKick.alreadyOn && !refetched && i >= 40) {
+            refetched = true;
+            clog("mobile cc refetch (captions already on, no capture)");
+            toggleMobileCaptions(ccKick);
+            await sleep(600);
+            toggleMobileCaptions(ccKick);
           }
         }
       }
@@ -412,28 +428,50 @@
     const btn = findMobileCcButton();
     return btn ? btn.getAttribute("aria-pressed") === "true" : null;
   }
+  function mobileCaptionsReady(api) {
+    if (!api) return !!findMobileCcButton();
+    try {
+      if ((api.getOption("captions", "tracklist") || []).length) return true;
+    } catch {}
+    return !!findMobileCcButton();
+  }
   function toggleMobileCaptions(kick) {
     try {
       if (kick.api) kick.api.toggleSubtitles();
       else findMobileCcButton()?.click();
+      kick.toggles++;
       return true;
     } catch {
       return false;
     }
   }
-  function kickMobileCaptions() {
+  function beginMobileCaptions() {
     const api = mobileCaptionApi();
     if (!api && !findMobileCcButton()) return null;
-    const kick = { api, wasOn: mobileCaptionsOn(api), toggles: 0 };
-    if (!toggleMobileCaptions(kick)) return null;
-    kick.toggles = 1;
-    return kick;
+    return { api, wasOn: mobileCaptionsOn(api), toggles: 0, enabled: false, attempts: 0 };
+  }
+  function ensureMobileCaptionsOn(kick) {
+    if (!kick || kick.enabled) return true;
+    if (mobileCaptionsOn(kick.api) === true) {
+      kick.alreadyOn = kick.attempts === 0;
+      kick.enabled = true;
+      return true;
+    }
+    if (!mobileCaptionsReady(kick.api)) return false;
+    kick.attempts++;
+    toggleMobileCaptions(kick);
+    if (mobileCaptionsOn(kick.api) === true) {
+      kick.enabled = true;
+      kick.turnedOn = true;
+      return true;
+    }
+    return false;
   }
   function restoreMobileCaptions(kick) {
     if (!kick || !kick.toggles) return;
-    const on = mobileCaptionsOn(kick.api);
-    if (on === null ? kick.toggles % 2 === 1 : kick.wasOn !== null && on !== kick.wasOn) {
-      toggleMobileCaptions(kick);
+    if (kick.wasOn === true) return;
+    for (let i = 0; i < 2 && mobileCaptionsOn(kick.api) !== false; i++) {
+      if (!toggleMobileCaptions(kick)) return;
     }
   }
 
