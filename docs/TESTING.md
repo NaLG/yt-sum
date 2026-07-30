@@ -177,3 +177,27 @@ test/
    The id must exist or the contract lint fails.
 3. If it is a regression, add a matrix cell with `knownBadRef` and prove it has
    teeth with `--ref <bad> --expect-fail`.
+
+## Status, 2026-07-30
+
+Verified working:
+
+- The contract lint runs in the gate (now 10 checks) and passes.
+- `canary-mweb.mjs` is green at 19/19 against live YouTube, and on its first
+  run it caught a genuine change: mobile YouTube replaced
+  `ytm-like-button-renderer` with `like-button-view-model`, so the Summarize
+  button had silently fallen back to a lower-priority anchor. Fixed in
+  content.js and re-registered in the contract.
+- `smoke-full.mjs` now requires the production intercept path.
+
+Not yet verified end to end:
+
+- `canary-desktop.mjs` and `matrix-mweb.mjs` are written and syntax-clean but
+  have not completed a green run. Both were blocked by the message-channel bug
+  fixed in b948605; the mweb canary went green once that landed, so these two
+  need a rerun and whatever shakes out. Run them individually
+  (`npm run canary:desktop`, `node test/matrix-mweb.mjs --cell <id>`) before
+  trusting a weekly result that includes them.
+- The matrix cells' `knownBadRef` values have not yet been proven with
+  `--ref <ref> --expect-fail`. Until they are, treat the cells as untested
+  tests: that flag is the whole point of recording the bad ref.
