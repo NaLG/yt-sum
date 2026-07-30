@@ -108,13 +108,17 @@ const CONTENT = `
 const report = new Report("matrix-mweb", { ref: REF || "working-tree", expectFail: EXPECT_FAIL });
 const srcDir = REF ? exportGitRef(REF) : null;
 
-async function ensurePlaying(h, video) {
+async function ensurePlaying(h, video, out) {
+  const seen = [];
   for (let i = 0; i < 7; i++) {
     const s = await h.call("state", null, { match: video, timeoutMs: 10000 });
+    seen.push(s ? { paused: s.paused, ct: s.ct, href: (s.href || "").slice(-30) } : { noReply: true });
     if (s && s.paused === false && s.ct > 0.4) return s;
-    android.tapPlay(i);
+    const tap = android.tapPlay(i);
+    seen[seen.length - 1].tap = tap.via;
     await sleep(4000);
   }
+  if (out) out.playbackAttempts = seen;
   android.screencap(`${ARTIFACTS}/matrix-noplay.png`);
   return null;
 }
@@ -158,7 +162,7 @@ async function runCell(cell) {
     if (!ready) throw new Error(`INFRA: ${cell.id}: watch page never loaded`);
 
     if (cell.play === "user") {
-      const playing = await ensurePlaying(h, cell.video);
+      const playing = await ensurePlaying(h, cell.video, out);
       if (!playing) throw new Error(`INFRA: ${cell.id}: could not start playback with a real tap`);
       out.startedPlaying = true;
     }

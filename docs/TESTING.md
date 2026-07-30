@@ -151,6 +151,12 @@ and they are all things the old suites left uncontrolled:
   data. The harness targets the active tab and reports `__visible`.
 - **Autoplay policy.** Uncontrolled by default. The strict cell sets
   `media.autoplay.default=5` explicitly.
+- **Leaked adb reverse forwards.** Each run adds an `adb reverse tcp:PORT`.
+  Left behind, they accumulate until the table is full and NEW forwards
+  silently stop working, at which point every probe command times out at once
+  and it looks exactly like a broken content script. `listen()` clears stale
+  forwards and `stop()` removes its own. If suites start failing with every
+  command timing out, check `adb reverse --list` first.
 - **The Homebrew adb hangs at exec on this machine.** `test/lib/android.mjs`
   always uses the SDK's own adb.
 
@@ -226,12 +232,17 @@ node test/lint-style.mjs --root <dir-with-src>
 
 Not yet verified end to end:
 
-- `canary-desktop.mjs` and `matrix-mweb.mjs` are written and syntax-clean but
-  have not completed a green run. Both were blocked by the message-channel bug
-  fixed in b948605; the mweb canary went green once that landed, so these two
-  need a rerun and whatever shakes out. Run them individually
-  (`npm run canary:desktop`, `node test/matrix-mweb.mjs --cell <id>`) before
-  trusting a weekly result that includes them.
+- `canary-desktop.mjs` and `matrix-mweb.mjs` have not completed a green run.
+  Two real harness bugs were found and fixed while chasing this (the message
+  channel in b948605, the leaked adb reverse forwards in c8d4b9d), and each
+  time the symptom was the same: every probe command timing out. Comms are now
+  confirmed working, and `matrix-mweb` gets as far as trying to start playback.
+  What remains is narrower and now instrumented: with the REAL extension
+  loaded, a real tap does not start playback, while the bare-extension canary
+  starts it reliably on the same emulator. The cell records what it saw in
+  `playbackAttempts` in `test/artifacts/reports/matrix-mweb.json`; start there.
+  Both suites are excluded from the weekly job (YAPSUM_EXPERIMENTAL=1 to
+  include them) so a scheduled run still returns a real verdict.
 - The matrix cells' `knownBadRef` values have not yet been proven with
   `--ref <ref> --expect-fail`. Until they are, treat the cells as untested
   tests: that flag is the whole point of recording the bad ref.
