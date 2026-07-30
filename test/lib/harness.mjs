@@ -110,10 +110,16 @@ setInterval(async () => {
     const cmd = await r.json();
     if (!cmd.id || cmd.id === __cmdId) return;
     if (cmd.scope !== "bg") {
+      __cmdId = cmd.id;
       const tabs = await browser.tabs.query({});
       const candidates = tabs.filter((t) => (t.url || "").includes(cmd.match || "youtube.com"));
       const target = candidates.find((t) => t.active) || candidates.sort((a, b) => b.id - a.id)[0];
-      if (target && !target.active) await browser.tabs.update(target.id, { active: true }).catch(() => {});
+      if (!target) {
+        __post("/result", { id: cmd.id, kind: cmd.kind, value: null, error: "no matching tab" });
+        return;
+      }
+      if (!target.active) await browser.tabs.update(target.id, { active: true }).catch(() => {});
+      browser.tabs.sendMessage(target.id, { __harnessCmd: cmd.kind, id: cmd.id, payload: cmd.payload }).catch(() => {});
       return;
     }
     __cmdId = cmd.id;
@@ -144,27 +150,24 @@ function buildContent({ port, extra }) {
       body: JSON.stringify({ kind, t: Date.now(), from: "content", ...(data || {}) }),
     }).catch(() => {});
   let __seen = 0;
-  setInterval(async () => {
-    if (document.visibilityState !== "visible") return;
-    let cmd = null;
-    try {
-      const r = await fetch("http://127.0.0.1:" + __PORT + "/cmd");
-      cmd = await r.json();
-    } catch { return; }
-    if (!cmd || !cmd.id || cmd.id === __seen || cmd.scope === "bg") return;
-    if (cmd.match && !location.href.includes(cmd.match)) return;
-    __seen = cmd.id;
-    const fn = __handlers[cmd.kind];
-    let value = null, error = null;
-    if (!fn) error = "no handler: " + cmd.kind;
-    else {
-      try { value = await fn(cmd.payload); } catch (e) { error = String(e); }
-    }
-    fetch("http://127.0.0.1:" + __PORT + "/result", {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id: cmd.id, kind: cmd.kind, value, error, href: location.href }),
-    }).catch(() => {});
-  }, 400);
+  browser.runtime.onMessage.addListener((msg) => {
+    if (!msg || !msg.__harnessCmd || msg.id === __seen) return;
+    __seen = msg.id;
+    const fn = __handlers[msg.__harnessCmd];
+    const reply = (value, error) =>
+      fetch("http://127.0.0.1:" + __PORT + "/result", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          id: msg.id, kind: msg.__harnessCmd, value, error,
+          href: location.href, visible: document.visibilityState === "visible",
+        }),
+      }).catch(() => {});
+    if (!fn) { reply(null, "no handler: " + msg.__harnessCmd); return; }
+    Promise.resolve()
+      .then(() => fn(msg.payload))
+      .then((v) => reply(v === undefined ? null : v, null))
+      .catch((e) => reply(null, String(e)));
+  });
   ${extra || ""}
 })();
 `;

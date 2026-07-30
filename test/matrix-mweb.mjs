@@ -142,7 +142,6 @@ async function runCell(cell) {
     target: "android",
     site: "mweb",
     srcDir,
-    observe: ["timedtext"],
     content: CONTENT,
   });
   const out = { id: cell.id, video: cell.video };
