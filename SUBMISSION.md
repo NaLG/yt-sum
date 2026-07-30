@@ -270,9 +270,9 @@ transmitted to the developer; there is no backend.
 
 **Reviewer notes delta (append to the standing notes):**
 
-> Changes in 0.5.6 vs 0.5.5 are one mobile-capture fix in the content
-> script; no new permissions, hosts, or APIs. Full diff:
-> https://github.com/NaLG/yt-sum/compare/8dd1f0d...751bf17
+> Changes in 0.5.6 vs 0.5.5 are mobile-capture fixes in the content script
+> plus one background change; no new permissions, hosts, or APIs. Full diff:
+> https://github.com/NaLG/yt-sum/compare/8dd1f0d...9c67b3a
 >
 > - src/content/content.js: the m.youtube.com player requests
 >   /api/timedtext only while caption display is active, so a user playing
@@ -319,13 +319,31 @@ transmitted to the developer; there is no backend.
 # bump src/manifest.json + package.json version first (AMO rejects a re-used version)
 npm run build                          # -> dist/<name>-<version>.zip  (unsigned)
 
-# Listed submission: upload the zip in the AMO Developer Hub "Submit a New Add-on"
-# flow (channel: "On this site"), fill the listing fields above, submit for review.
+# LISTED submission (the path actually used since 0.5.4). Release notes and
+# reviewer notes only ride along if --amo-metadata is passed; without it the
+# version uploads with both fields BLANK and you have to fill them in the Hub.
+web-ext sign --api-key=<issuer> --api-secret=<secret> --channel=listed \
+  --source-dir src --artifacts-dir dist \
+  --amo-metadata dist/amo-metadata-<version>.json
+
+# It ends with "wait up to 24h for an email", which IS success: listed versions
+# return no xpi because AMO hosts them. Verify the channel tag on Manage Status
+# & Versions. Signing does NOT touch the listing page itself (icon, screenshots,
+# description, privacy policy); those stay manual on Edit Product Page.
 
 # (For a self-distributed signed build instead of listing:)
 web-ext sign --api-key=<issuer> --api-secret=<secret> --channel=unlisted \
   --source-dir src --artifacts-dir dist
 ```
+
+`dist/amo-metadata-<version>.json` is generated from the release/reviewer notes
+above and has the shape `{"version": {"release_notes": {"en-US": "..."},
+"approval_notes": "..."}}`. Regenerate it whenever those notes change, and
+re-check that the reviewer-notes diff link ends at the commit you are actually
+shipping, not an earlier one.
+
+**`--source-dir src` signs the working tree, not `dist/*.zip`.** Make sure the
+tree is the commit you intend to ship before signing.
 
 ## Status (2026-07-11)
 
