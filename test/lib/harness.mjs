@@ -42,6 +42,10 @@ const __closeYouTubeTabs = async () => {
     return doomed.length;
   } catch (e) { return -1; }
 };
+browser.runtime.onMessage.addListener((msg) => {
+  if (!msg || !msg.__harnessRelay) return;
+  __post(msg.__harnessRelay.path, msg.__harnessRelay.body);
+});
 globalThis.__bgCmd = async (cmd) => {
   if (cmd.kind === "closeYouTubeTabs") return { closed: await __closeYouTubeTabs() };
   if (cmd.kind === "listTabs") {
@@ -144,11 +148,13 @@ function buildContent({ port, extra }) {
   const __PORT = ${port};
   const __handlers = {};
   globalThis.onCmd = (kind, fn) => { __handlers[kind] = fn; };
-  globalThis.ev = (kind, data) =>
-    fetch("http://127.0.0.1:" + __PORT + "/ev", {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ kind, t: Date.now(), from: "content", ...(data || {}) }),
+  const __send = (path, body) => {
+    try { browser.runtime.sendMessage({ __harnessRelay: { path, body } }); } catch {}
+    fetch("http://127.0.0.1:" + __PORT + path, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
     }).catch(() => {});
+  };
+  globalThis.ev = (kind, data) => __send("/ev", { kind, t: Date.now(), from: "content", ...(data || {}) });
   globalThis.ev("harness-content-ready", { href: location.href.slice(0, 120) });
   let __seen = 0;
   browser.runtime.onMessage.addListener((msg) => {
@@ -156,13 +162,10 @@ function buildContent({ port, extra }) {
     __seen = msg.id;
     const fn = __handlers[msg.__harnessCmd];
     const reply = (value, error) =>
-      fetch("http://127.0.0.1:" + __PORT + "/result", {
-        method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          id: msg.id, kind: msg.__harnessCmd, value, error,
-          href: location.href, visible: document.visibilityState === "visible",
-        }),
-      }).catch(() => {});
+      __send("/result", {
+        id: msg.id, kind: msg.__harnessCmd, value, error,
+        href: location.href, visible: document.visibilityState === "visible",
+      });
     if (!fn) { reply(null, "no handler: " + msg.__harnessCmd); return; }
     Promise.resolve()
       .then(() => fn(msg.payload))
@@ -231,7 +234,11 @@ export function createHarness(options = {}) {
       api.port = await new Promise((r) =>
         server.listen(0, target === "android" ? "0.0.0.0" : "127.0.0.1", () => r(server.address().port))
       );
-      if (target === "android") android.reversePort(api.port);
+      if (target === "android") {
+        const stale = android.clearReverses();
+        if (DEBUG && stale) console.log(`  [adb] cleared ${stale} stale reverse forward(s)`);
+        android.reversePort(api.port);
+      }
       return api.port;
     },
 
@@ -259,10 +266,11 @@ export function createHarness(options = {}) {
         manifest = JSON.parse(readFileSync(join(extDir, "manifest.json"), "utf8"));
         manifest.permissions = [...new Set([...(manifest.permissions || []), "tabs", "http://127.0.0.1/*"])];
         manifest.background.scripts = [...manifest.background.scripts, "harness-bg.js"];
-        manifest.content_scripts = [
-          ...manifest.content_scripts,
-          { matches: contentMatches, js: ["harness-content.js"], run_at: "document_idle" },
-        ];
+        if (manifest.content_scripts && manifest.content_scripts.length) {
+          manifest.content_scripts[0].js = [...manifest.content_scripts[0].js, "harness-content.js"];
+        } else {
+          manifest.content_scripts = [{ matches: contentMatches, js: ["harness-content.js"], run_at: "document_idle" }];
+        }
       }
       writeFileSync(join(extDir, "manifest.json"), JSON.stringify(manifest, null, 1));
       writeFileSync(join(extDir, "harness-bg.js"), buildBackground({ port: api.port, observe, closeExistingTabs, extra: bg }));
@@ -372,6 +380,7 @@ export function createHarness(options = {}) {
       await sleep(400);
       try { if (child) child.kill("SIGKILL"); } catch {}
       try { server.close(); } catch {}
+      if (target === "android" && api.port) android.unreversePort(api.port);
       if (target === "desktop") {
         try { execFileSync("/bin/sh", ["-c", `pkill -f 'firefox.*-profile ${tmpdir()}'; true`]); } catch {}
       }

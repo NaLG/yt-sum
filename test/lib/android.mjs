@@ -58,6 +58,16 @@ export function reversePort(port) {
   adb("reverse", `tcp:${port}`, `tcp:${port}`);
 }
 
+export function unreversePort(port) {
+  adbTry("reverse", "--remove", `tcp:${port}`);
+}
+
+export function clearReverses() {
+  const before = (adbTry("reverse", "--list") || "").split("\n").filter(Boolean).length;
+  adbTry("reverse", "--remove-all");
+  return before;
+}
+
 export function viewIntent(url) {
   adb("shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", `'${url.replace(/'/g, "")}'`, FIREFOX_APK);
 }

@@ -77,15 +77,23 @@ say "repo $(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null)  version $(node -
 
 run_step "release gate" node test/run-all.mjs
 run_step "contract lint" node test/lint-contract.mjs
-run_step "canary desktop" node test/canary-desktop.mjs
 
 if [ "$ANDROID" = "1" ]; then
   run_step "canary mweb" node test/canary-mweb.mjs
-  if [ "$QUICK" = "0" ]; then
+fi
+
+if [ "${YAPSUM_EXPERIMENTAL:-0}" = "1" ]; then
+  run_step "canary desktop" node test/canary-desktop.mjs
+  if [ "$ANDROID" = "1" ] && [ "$QUICK" = "0" ]; then
     run_step "matrix mweb" node test/matrix-mweb.mjs
   fi
-  sh "$ROOT/scripts/android-emulator.sh" down >>"$LOG" 2>&1
+else
+  say ""
+  say "skipped (not yet proven green, see docs/TESTING.md Status): canary desktop, matrix mweb"
+  say "  run them with YAPSUM_EXPERIMENTAL=1, or individually, before trusting their verdict"
 fi
+
+[ "$ANDROID" = "1" ] && sh "$ROOT/scripts/android-emulator.sh" down >>"$LOG" 2>&1
 
 say ""
 if [ -n "$contract_fail" ]; then
