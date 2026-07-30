@@ -326,9 +326,15 @@ web-ext sign --api-key=<issuer> --api-secret=<secret> --channel=listed \
   --source-dir src --artifacts-dir dist \
   --amo-metadata dist/amo-metadata-<version>.json
 
-# It ends with "wait up to 24h for an email", which IS success: listed versions
-# return no xpi because AMO hosts them. Verify the channel tag on Manage Status
-# & Versions. Signing does NOT touch the listing page itself (icon, screenshots,
+# Verified 2026-07-30: this DOES download a signed xpi and the version goes
+# straight to file.status=public (auto-approved). A downloaded xpi does NOT mean
+# it went unlisted. Confirm the channel via the API, not by the xpi's presence:
+#   GET /api/v5/addons/addon/<gecko-id>/versions/?filter=all_with_unlisted
+# with an HS256 JWT (iss=api key, jti=random, iat, exp=iat+300, header
+# "Authorization: JWT <token>"). Each result carries channel + file.status, and
+# /versions/<id>/ returns release_notes and approval_notes so you can check that
+# --amo-metadata actually landed.
+# Signing does NOT touch the listing page itself (icon, screenshots,
 # description, privacy policy); those stay manual on Edit Product Page.
 
 # (For a self-distributed signed build instead of listing:)
@@ -347,6 +353,7 @@ tree is the commit you intend to ship before signing.
 
 ## Status (2026-07-11)
 
+- [x] 0.5.6 submitted listed and auto-approved to public (2026-07-30, verified via API)
 - [x] Name, icons, license, privacy policy text, listing copy, reviewer notes: all submitted
 - [x] Listed version submitted (identity verification pending, see note at top)
 - [ ] Listing icon uploaded on Edit Product Page (src/icons/icon-128.png; AMO ignores manifest icons)
